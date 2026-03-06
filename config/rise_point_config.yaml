@@ -1,0 +1,19 @@
+# HomeSignal AI - 상승 시점 감지 설정
+
+rise_point:
+  # 감지 방법: ma_crossover, rate_threshold, consecutive
+  method: "ma_crossover"
+  
+  # 이동평균 교차 방식 설정
+  short_ma_weeks: 5
+  long_ma_weeks: 20
+  
+  # 변동률 임계값 방식 설정
+  rate_threshold_pct: 2.0  # N주 대비 2% 이상 상승
+  
+  # 연속 상승 방식 설정
+  consecutive_weeks: 3  # 3주 연속 상승
+  
+  # 키워드 추출 윈도우 설정
+  lookback_weeks: 4   # 상승 시점 전 4주
+  lookahead_weeks: 4  # 상승 시점 후 4주

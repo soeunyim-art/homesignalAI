@@ -1,0 +1,66 @@
+# HomeSignal AI - 키워드 설정
+# 부동산 시계열 예측 및 뉴스 분석용 키워드 정의
+
+categories:
+  transport:
+    primary:
+      - "GTX"
+      - "GTX-C"
+      - "GTX-A"
+      - "청량리역"
+    synonyms:
+      - "수도권광역급행철도"
+      - "환승센터"
+      - "광역철도"
+      - "급행철도"
+    
+  redevelopment:
+    primary:
+      - "재개발"
+      - "뉴타운"
+      - "이문휘경뉴타운"
+      - "청량리 7구역"
+    synonyms:
+      - "정비사업"
+      - "재건축"
+      - "리모델링"
+      - "도시정비"
+      - "주거환경개선"
+    
+  supply:
+    primary:
+      - "분양"
+      - "입주"
+      - "착공"
+      - "준공"
+    synonyms:
+      - "조합원"
+      - "특별공급"
+      - "청약"
+      - "일반분양"
+      - "사전청약"
+    
+  policy:
+    primary:
+      - "금리"
+      - "대출"
+      - "규제"
+      - "정책"
+    synonyms:
+      - "기준금리"
+      - "DSR"
+      - "LTV"
+      - "DTI"
+      - "전매제한"
+      - "분양가상한제"
+
+# 변수 매핑 (피처 엔지니어링용)
+feature_mapping:
+  news_freq_gtx:
+    - transport
+  news_freq_redev:
+    - redevelopment
+  news_freq_supply:
+    - supply
+  news_freq_policy:
+    - policy
