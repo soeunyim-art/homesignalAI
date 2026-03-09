@@ -48,7 +48,7 @@ class ChatService:
         # Query Planner 컴포넌트 초기화
         if self.enable_planner:
             self.classifier = IntentClassifier(self.ai_client)
-            self.decomposer = QueryDecomposer()
+            self.decomposer = QueryDecomposer(ai_client=self.ai_client)
             self.plan_generator = PlanGenerator()
             self.plan_executor = PlanExecutor(
                 vector_db=self.vector_db,
@@ -89,7 +89,7 @@ class ChatService:
         intents = [classification.primary_intent] + classification.secondary_intents
 
         # 2. 엔티티 추출 및 질문 분해
-        entities = self.decomposer.extractor.extract(request.message)
+        entities = await self.decomposer.extractor.extract(request.message)
         sub_queries = self.decomposer.decompose(request.message, intents, entities)
 
         # 3. 실행 계획 생성

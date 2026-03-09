@@ -83,6 +83,12 @@ class Settings(BaseSettings):
     crawler_extract_content: bool = True
     crawler_content_max_length: int = 2000
 
+    # Keyword Extraction 설정
+    enable_nlp_extraction: bool = True  # NLP 형태소 분석 사용
+    enable_ai_extraction: bool = False  # AI 추출 사용 (비용 고려하여 기본 비활성화)
+    ai_extraction_min_confidence: float = 0.5  # AI 추출 최소 신뢰도
+    nlp_min_noun_length: int = 2  # NLP 명사 최소 길이
+
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"

@@ -43,6 +43,11 @@ crawler = [
     "beautifulsoup4>=4.12.0",
     "lxml>=5.0.0",
 ]
+nlp = [
+    "konlpy>=0.6.0",
+    "mecab-python3>=1.0.0",
+    "scikit-learn>=1.4.0",
+]
 
 [tool.ruff]
 target-version = "py311"
