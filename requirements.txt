@@ -1,0 +1,31 @@
+# HomeSignal AI - Vercel Deployment Requirements
+# Core dependencies only (ML libraries excluded due to 500MB bundle limit)
+
+# FastAPI and ASGI server
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+
+# Data validation and settings
+pydantic>=2.0
+pydantic-settings>=2.0
+
+# Database and storage
+supabase>=2.0
+pyiceberg>=0.5.0
+
+# HTTP client
+httpx>=0.26.0
+
+# AI APIs
+openai>=1.10.0
+anthropic>=0.18.0
+
+# Configuration
+pyyaml>=6.0
+
+# Web scraping (for news crawler)
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+
+# Note: Prophet, LightGBM, pandas, numpy are excluded
+# These will be implemented in a separate ML service after initial deployment

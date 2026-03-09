@@ -1,0 +1,72 @@
+# Test files
+tests/
+*.test.py
+conftest.py
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Development files
+.venv/
+venv/
+ENV/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Cache
+.mypy_cache/
+.ruff_cache/
+.cache/
+
+# Design and media files
+design/
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.gif
+unnamed*
+
+# Documentation (keep essential docs only)
+docs/dev-logs/
+docs/06_Development_Journal.md
+docs/07_Handover_Document.md
+docs/08_Presentation_Report.md
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Local environment
+.env
+.env.local
+
+# Git
+.git/
+.gitignore
+
+# Temporary files
+*.tmp
+*.temp
+nul
+
+# Cursor/Claude
+.cursor/
+.claude/
+
+# Large ML dependencies (not needed for Vercel deployment)
+*.pkl
+*.joblib
+*.h5
+*.model
