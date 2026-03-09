@@ -25,7 +25,14 @@ ECOS_API_KEY        = os.getenv("ECOS_API_KEY")
 SUPABASE_URL        = os.getenv("SUPABASE_URL")
 SUPABASE_KEY        = os.getenv("SUPABASE_KEY")
 
-DONGDAEMUN_CODE    = "11230"
+# 수집 대상 구 (동대문구 + 가격대 유사 인접 4개구)
+TARGET_DISTRICTS = {
+    "동대문구": "11230",
+    "성북구":   "11290",
+    "중랑구":   "11260",
+    "강북구":   "11305",
+    "도봉구":   "11320",
+}
 COLLECT_FROM_YEAR  = 2020
 COLLECT_FROM_MONTH = 1
 
@@ -84,11 +91,11 @@ def supabase_upsert(table: str, rows: list[dict], on_conflict: str) -> int:
 # ─────────────────────────────────────────
 # 국토교통부 API 공통 파서
 # ─────────────────────────────────────────
-def fetch_molit_xml(endpoint: str, params: dict) -> list[dict]:
+def fetch_molit_xml(endpoint: str, params: dict, lawd_cd: str = "11230") -> list[dict]:
     """국토교통부 API (XML) 호출 후 item 리스트 반환"""
     params.update({
         "serviceKey": PUBLIC_DATA_API_KEY,
-        "LAWD_CD":    DONGDAEMUN_CODE,
+        "LAWD_CD":    lawd_cd,
         "numOfRows":  1000,
         "pageNo":     1,
     })
@@ -116,11 +123,11 @@ def fetch_molit_xml(endpoint: str, params: dict) -> list[dict]:
 # ─────────────────────────────────────────
 # 아파트 매매 실거래가 수집
 # ─────────────────────────────────────────
-def collect_apt_trade(year: int, month: int) -> int:
+def collect_apt_trade(year: int, month: int, lawd_cd: str = "11230") -> int:
     deal_ymd = f"{year}{month:02d}"
-    print(f"  매매 {year}-{month:02d} 수집 중...")
+    print(f"  매매 {year}-{month:02d} 수집 중... (코드:{lawd_cd})")
 
-    items = fetch_molit_xml(MOLIT_TRADE_URL, {"DEAL_YMD": deal_ymd})
+    items = fetch_molit_xml(MOLIT_TRADE_URL, {"DEAL_YMD": deal_ymd}, lawd_cd)
     if not items:
         return 0
 
@@ -174,11 +181,11 @@ def _parse_contract_term(val) -> int:
 # ─────────────────────────────────────────
 # 아파트 전월세 실거래가 수집
 # ─────────────────────────────────────────
-def collect_apt_rent(year: int, month: int) -> int:
+def collect_apt_rent(year: int, month: int, lawd_cd: str = "11230") -> int:
     deal_ymd = f"{year}{month:02d}"
-    print(f"  전월세 {year}-{month:02d} 수집 중...")
+    print(f"  전월세 {year}-{month:02d} 수집 중... (코드:{lawd_cd})")
 
-    items = fetch_molit_xml(MOLIT_RENT_URL, {"DEAL_YMD": deal_ymd})
+    items = fetch_molit_xml(MOLIT_RENT_URL, {"DEAL_YMD": deal_ymd}, lawd_cd)
     if not items:
         return 0
 
@@ -313,20 +320,26 @@ def run_full_collection():
     start = date(COLLECT_FROM_YEAR, COLLECT_FROM_MONTH, 1)
     end   = date(now.year, now.month, 1) - relativedelta(months=1)
 
+    district_names = ", ".join(TARGET_DISTRICTS.keys())
     print("=" * 55)
     print("HomeSignal AI 데이터 수집 시작")
-    print(f"수집 범위: {start} ~ {end} (동대문구)")
+    print(f"수집 범위: {start} ~ {end}")
+    print(f"수집 구: {district_names}")
     print("=" * 55)
 
     total_trade = total_rent = 0
-    cur = start
-    while cur <= end:
-        print(f"\n[{cur.year}-{cur.month:02d}]")
-        total_trade += collect_apt_trade(cur.year, cur.month)
-        time.sleep(0.5)
-        total_rent  += collect_apt_rent(cur.year, cur.month)
-        time.sleep(0.5)
-        cur += relativedelta(months=1)
+    for gu_name, lawd_cd in TARGET_DISTRICTS.items():
+        print(f"\n{'='*30}")
+        print(f"[{gu_name} ({lawd_cd})] 수집 시작")
+        print(f"{'='*30}")
+        cur = start
+        while cur <= end:
+            print(f"\n[{cur.year}-{cur.month:02d}]")
+            total_trade += collect_apt_trade(cur.year, cur.month, lawd_cd)
+            time.sleep(0.5)
+            total_rent  += collect_apt_rent(cur.year, cur.month, lawd_cd)
+            time.sleep(0.5)
+            cur += relativedelta(months=1)
 
     print("\n[금리 정보]")
     total_rate = collect_interest_rates(
@@ -345,9 +358,11 @@ def run_monthly_update():
     now        = datetime.now()
     prev_month = date(now.year, now.month, 1) - relativedelta(months=1)
     y, m       = prev_month.year, prev_month.month
-    print(f"증분 업데이트: {y}-{m:02d}")
-    collect_apt_trade(y, m)
-    collect_apt_rent(y, m)
+    print(f"증분 업데이트: {y}-{m:02d} ({', '.join(TARGET_DISTRICTS.keys())})")
+    for gu_name, lawd_cd in TARGET_DISTRICTS.items():
+        print(f"\n[{gu_name}]")
+        collect_apt_trade(y, m, lawd_cd)
+        collect_apt_rent(y, m, lawd_cd)
     collect_interest_rates(prev_month.strftime("%Y%m%d"), prev_month.strftime("%Y%m%d"))
 
 

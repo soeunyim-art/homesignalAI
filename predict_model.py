@@ -21,7 +21,7 @@ from sklearn.linear_model import RidgeCV
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-from sklearn.model_selection import TimeSeriesSplit
+from sklearn.model_selection import train_test_split  # noqa: F401 (reserved for future use)
 from sklearn.metrics import mean_absolute_error, r2_score
 
 warnings.filterwarnings("ignore")
@@ -238,31 +238,39 @@ def _make_pipeline() -> Pipeline:
 
 def train_model(df: pd.DataFrame, horizon: int):
     target = f"target_{horizon}m"
-    needed = NUMERIC_FEATURES + CATEGORICAL_FEATURES + [target]
-    sub    = df[needed].dropna()
+    needed = NUMERIC_FEATURES + CATEGORICAL_FEATURES + [target, "ym"]
+    sub    = df[needed].dropna().sort_values("ym").reset_index(drop=True)
 
-    X = sub[NUMERIC_FEATURES + CATEGORICAL_FEATURES]
-    y = sub[target]
+    X   = sub[NUMERIC_FEATURES + CATEGORICAL_FEATURES]
+    y   = sub[target]
 
+    # 시계열 7:3 고정 분할 (앞 70% 학습, 뒤 30% 평가)
+    split = int(len(sub) * 0.7)
+    X_train, X_test = X.iloc[:split], X.iloc[split:]
+    y_train, y_test = y.iloc[:split], y.iloc[split:]
+    train_start = sub["ym"].iloc[0].strftime("%Y-%m")
+    train_end   = sub["ym"].iloc[split - 1].strftime("%Y-%m")
+    test_start  = sub["ym"].iloc[split].strftime("%Y-%m")
+    test_end    = sub["ym"].iloc[-1].strftime("%Y-%m")
+
+    # 평가용 파이프라인: train으로만 학습 → test로 검증
+    eval_pipe = _make_pipeline()
+    eval_pipe.fit(X_train, y_train)
+    y_pred  = eval_pipe.predict(X_test)
+    mae_val = mean_absolute_error(y_test, y_pred)
+    r2_val  = r2_score(y_test, y_pred)
+
+    # 최종 파이프라인: 전체 데이터로 재학습 (예측에 사용)
     pipe = _make_pipeline()
-
-    # 시계열 교차 검증 (5-fold)
-    tscv     = TimeSeriesSplit(n_splits=5)
-    mae_list, r2_list = [], []
-    for tr_idx, te_idx in tscv.split(X):
-        pipe.fit(X.iloc[tr_idx], y.iloc[tr_idx])
-        y_pred = pipe.predict(X.iloc[te_idx])
-        mae_list.append(mean_absolute_error(y.iloc[te_idx], y_pred))
-        r2_list.append(r2_score(y.iloc[te_idx], y_pred))
-
-    # 전체 데이터로 최종 학습
     pipe.fit(X, y)
 
     best_alpha = pipe.named_steps["model"].alpha_
     print(f"\n  [{horizon}개월 후 예측]")
-    print(f"    학습 샘플 수: {len(sub):,}행  /  최적 alpha: {best_alpha}")
-    print(f"    MAE 평균   : {np.mean(mae_list):.2f}%  (±{np.std(mae_list):.2f})")
-    print(f"    R²  평균   : {np.mean(r2_list):.3f}    (±{np.std(r2_list):.3f})")
+    print(f"    학습: {train_start} ~ {train_end} ({split}행)  "
+          f"평가: {test_start} ~ {test_end} ({len(X_test)}행)")
+    print(f"    최적 alpha: {best_alpha}")
+    print(f"    MAE (test): {mae_val:.2f}%")
+    print(f"    R²  (test): {r2_val:.3f}")
 
     return pipe, X, y
 
@@ -339,26 +347,32 @@ def predict_next(df: pd.DataFrame, pipes: dict) -> pd.DataFrame:
     feature_cols = list(pipes[1].named_steps["pre"].feature_names_in_)
 
     results = []
+    dong_pct = {}   # 동별 예측 변화율 저장 (아파트별 예측에 재사용)
     for _, row in latest.iterrows():
         X_pred = pd.DataFrame([row[feature_cols]])
         current = row["avg_price_10k"]
+        dong_name = row["dong"]
         rec = {
-            "동":          row["dong"],
+            "동":          dong_name,
             "기준월":      row["ym"].strftime("%Y-%m"),
             "현재가(만원)": int(current),
         }
+        pcts = {}
         for h in [1, 2, 3]:
             try:
-                pred_pct   = pipes[h].predict(X_pred)[0]          # 예측 변화율 (%)
-                pred_price = current * (1 + pred_pct / 100)        # 예측 절대가 환산
+                pred_pct   = pipes[h].predict(X_pred)[0]
+                pred_price = current * (1 + pred_pct / 100)
                 diff       = pred_price - current
                 rec[f"{h}개월후_예측(만원)"] = f"{pred_price:,.0f}"
                 rec[f"{h}개월후_변동(만원)"] = f"{diff:+,.0f}"
                 rec[f"{h}개월후_변동(%)"]   = f"{pred_pct:+.2f}%"
+                pcts[h] = pred_pct
             except Exception:
                 rec[f"{h}개월후_예측(만원)"] = "N/A"
                 rec[f"{h}개월후_변동(만원)"] = "N/A"
                 rec[f"{h}개월후_변동(%)"]   = "N/A"
+                pcts[h] = None
+        dong_pct[dong_name] = pcts
         results.append(rec)
 
     pred_df = pd.DataFrame(results)
@@ -367,18 +381,179 @@ def predict_next(df: pd.DataFrame, pipes: dict) -> pd.DataFrame:
     print()
     print(pred_df.to_string(index=False))
 
-    # CSV 저장
+    # CSV 저장 (동별)
     pred_df.to_csv("prediction_result.csv", index=False, encoding="utf-8-sig")
     print("\n  → prediction_result.csv 저장")
 
-    # Supabase predictions 테이블에 저장
+    # Supabase predictions 테이블에 저장 (동별)
     save_predictions_to_supabase(pred_df)
+
+    # ── 아파트별 예측 ──────────────────────────────
+    apt_df = predict_apt_level(dong_pct)
+    if apt_df is not None:
+        apt_df.to_csv("prediction_result_apt.csv", index=False, encoding="utf-8-sig")
+        print("\n  → prediction_result_apt.csv 저장")
+        save_apt_predictions_to_supabase(apt_df)
 
     return pred_df
 
 
+def fetch_apt_current_prices() -> pd.DataFrame:
+    """apt_trade에서 아파트별 최근 6개월 평균 거래가 조회"""
+    print("\n  아파트별 최근 거래가 조회 중...")
+    url     = f"{SUPABASE_URL}/rest/v1/apt_trade"
+    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+
+    # 최근 6개월 데이터만 가져오기
+    import datetime
+    cutoff = (datetime.date.today().replace(day=1) - datetime.timedelta(days=180))
+    cutoff_year  = cutoff.year
+    cutoff_month = cutoff.month
+
+    rows, offset = [], 0
+    while True:
+        params = {
+            "select":     "dong,apt_name,area,deal_year,deal_month,price_10k",
+            "deal_year":  f"gte.{cutoff_year}",
+            "limit":      "1000",
+            "offset":     str(offset),
+        }
+        resp = requests.get(url, headers=headers, params=params, timeout=30)
+        if resp.status_code != 200:
+            print(f"  [WARN] apt_trade 조회 실패: {resp.status_code}")
+            return None
+        batch = resp.json()
+        rows.extend(batch)
+        if len(batch) < 1000:
+            break
+        offset += len(batch)
+
+    if not rows:
+        return None
+
+    apt = pd.DataFrame(rows)
+    apt["deal_year"]  = pd.to_numeric(apt["deal_year"],  errors="coerce")
+    apt["deal_month"] = pd.to_numeric(apt["deal_month"], errors="coerce")
+    apt["price_10k"]  = pd.to_numeric(apt["price_10k"],  errors="coerce")
+    apt["area"]       = pd.to_numeric(apt["area"],       errors="coerce").round(1)
+
+    # cutoff 월 이후 필터
+    apt = apt[(apt["deal_year"] > cutoff_year) |
+              ((apt["deal_year"] == cutoff_year) & (apt["deal_month"] >= cutoff_month))]
+
+    # 아파트별(동+이름+면적) 평균가 및 최신 거래월
+    grp = apt.groupby(["dong", "apt_name", "area"]).agg(
+        current_price_10k=("price_10k", "mean"),
+        trade_count=("price_10k", "count"),
+        last_year=("deal_year", "max"),
+        last_month=("deal_month", "max"),
+    ).reset_index()
+
+    # 거래 2건 이상인 것만 (1건은 이상치 위험)
+    grp = grp[grp["trade_count"] >= 2].copy()
+    grp["current_price_10k"] = grp["current_price_10k"].round(0).astype(int)
+    grp["base_ym"] = grp["last_year"].astype(int).astype(str) + "-" + \
+                     grp["last_month"].astype(int).astype(str).str.zfill(2)
+
+    print(f"  아파트 {len(grp):,}개 (거래 2건+ 기준)")
+    return grp
+
+
+def predict_apt_level(dong_pct: dict) -> pd.DataFrame:
+    """동별 예측 변화율을 아파트별 현재가에 적용"""
+    print("\n[Step 4] 아파트별 예측가 산출")
+
+    apt = fetch_apt_current_prices()
+    if apt is None or len(apt) == 0:
+        print("  [WARN] 아파트 데이터 없음 - 아파트별 예측 건너뜀")
+        return None
+
+    results = []
+    for _, row in apt.iterrows():
+        dong = row["dong"]
+        if dong not in dong_pct:
+            continue
+        pcts   = dong_pct[dong]
+        cur    = row["current_price_10k"]
+        rec = {
+            "동":          dong,
+            "아파트명":    row["apt_name"],
+            "전용면적(㎡)": row["area"],
+            "기준월":      row["base_ym"],
+            "현재가(만원)": cur,
+        }
+        for h in [1, 2, 3]:
+            pct = pcts.get(h)
+            if pct is not None:
+                pred = int(cur * (1 + pct / 100))
+                diff = pred - cur
+                rec[f"{h}개월후_예측(만원)"] = pred
+                rec[f"{h}개월후_변동(만원)"] = diff
+                rec[f"{h}개월후_변동(%)"]   = round(pct, 2)
+            else:
+                rec[f"{h}개월후_예측(만원)"] = None
+                rec[f"{h}개월후_변동(만원)"] = None
+                rec[f"{h}개월후_변동(%)"]   = None
+        results.append(rec)
+
+    apt_df = pd.DataFrame(results).sort_values(["동", "아파트명", "전용면적(㎡)"]).reset_index(drop=True)
+    print(f"  총 {len(apt_df):,}개 아파트 예측 완료")
+    print()
+    print(apt_df[["동","아파트명","전용면적(㎡)","현재가(만원)",
+                  "1개월후_예측(만원)","1개월후_변동(%)"]].to_string(index=False))
+    return apt_df
+
+
+def save_apt_predictions_to_supabase(apt_df: pd.DataFrame):
+    """아파트별 예측 결과를 Supabase predictions_apt 테이블에 upsert"""
+    import json
+    from datetime import date
+
+    run_date = date.today().isoformat()
+    rows = []
+    for _, row in apt_df.iterrows():
+        def to_int(val):
+            try:   return int(val) if val is not None else None
+            except: return None
+        def to_float(val):
+            try:   return float(val) if val is not None else None
+            except: return None
+
+        rows.append({
+            "run_date":          run_date,
+            "dong":              row["동"],
+            "apt_name":          row["아파트명"],
+            "area":              float(row["전용면적(㎡)"]),
+            "base_ym":           row["기준월"],
+            "current_price_10k": to_int(row["현재가(만원)"]),
+            "pred_1m_10k":       to_int(row["1개월후_예측(만원)"]),
+            "pred_2m_10k":       to_int(row["2개월후_예측(만원)"]),
+            "pred_3m_10k":       to_int(row["3개월후_예측(만원)"]),
+            "change_1m_pct":     to_float(row["1개월후_변동(%)"]),
+            "change_2m_pct":     to_float(row["2개월후_변동(%)"]),
+            "change_3m_pct":     to_float(row["3개월후_변동(%)"]),
+        })
+
+    url     = f"{SUPABASE_URL}/rest/v1/predictions_apt"
+    headers = {
+        "apikey":        SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type":  "application/json",
+        "Prefer":        "resolution=merge-duplicates,return=representation",
+    }
+    resp = requests.post(url, headers=headers,
+                         params={"on_conflict": "run_date,dong,apt_name,area"},
+                         data=json.dumps(rows, ensure_ascii=False),
+                         timeout=30)
+    if resp.status_code in (200, 201):
+        print(f"  → Supabase predictions_apt 저장 완료 ({len(rows)}개 아파트)")
+    else:
+        print(f"  [ERROR] predictions_apt 저장 실패 {resp.status_code}: {resp.text[:200]}")
+
+
 def save_predictions_to_supabase(pred_df: pd.DataFrame):
     """예측 결과를 Supabase predictions 테이블에 upsert"""
+    import json
     from datetime import date
 
     run_date = date.today().isoformat()
@@ -418,7 +593,7 @@ def save_predictions_to_supabase(pred_df: pd.DataFrame):
     }
     resp = requests.post(url, headers=headers,
                          params={"on_conflict": "run_date,dong"},
-                         data=__import__("json").dumps(rows, ensure_ascii=False),
+                         data=json.dumps(rows, ensure_ascii=False),
                          timeout=30)
     if resp.status_code in (200, 201):
         print(f"  → Supabase predictions 테이블 저장 완료 ({len(rows)}개 동)")
