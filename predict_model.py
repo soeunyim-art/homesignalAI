@@ -67,10 +67,17 @@ def load_data() -> pd.DataFrame:
         "trade_count",   "jeonse_count",     "avg_jeonse_10k",    "avg_jeonse_per_sqm",
         "wolse_count",   "avg_monthly_rent_10k",
         "rate_base",     "rate_cd",          "rate_bond3y",
+        # 뉴스 피처 (없으면 0 으로 채움)
+        "total_news",    "regulation_news",  "easing_news",
+        "transport_news","redevelop_news",   "macro_sentiment",
+        "local_news_count", "local_redevelop_count",
+        "local_regulation_count", "local_transport_count",
     ]
     for c in num_cols:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
+        else:
+            df[c] = 0.0   # 뉴스 뷰 미생성 시 0으로 대체 (모델 실행 유지)
 
     df["deal_year"]  = df["deal_year"].astype(int)
     df["deal_month"] = df["deal_month"].astype(int)
@@ -97,6 +104,18 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
         for col in ["avg_jeonse_10k", "avg_jeonse_per_sqm", "jeonse_count"]:
             if col in g.columns:
                 g[col] = g[col].ffill()
+
+        # 뉴스 피처 결측치 처리
+        # · 뉴스가 없는 달(데이터 수집 전 기간)은 0으로 채움
+        # · macro_sentiment만 0.0 (중립) 기본값 사용
+        for col in ["total_news", "regulation_news", "easing_news",
+                    "transport_news", "redevelop_news",
+                    "local_news_count", "local_redevelop_count",
+                    "local_regulation_count", "local_transport_count"]:
+            if col in g.columns:
+                g[col] = g[col].fillna(0)
+        if "macro_sentiment" in g.columns:
+            g["macro_sentiment"] = g["macro_sentiment"].fillna(0.0)
 
         # Lag 1~3개월 (과거 가격 참조)
         for lag in [1, 2, 3]:
@@ -140,6 +159,26 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
 #   - avg_price_10k 제거: 타겟(변화율) 계산에 현재가가 직접 쓰이므로 정보 누수
 #   - rate_cd, rate_bond3y 제거: 기준금리와 거의 동일하게 움직이는 중복 피처
 #   - month 제거 → month_sin/cos 추가: 12월-1월이 연속되도록 순환 인코딩
+#   - 뉴스 피처 추가: SQL 뷰에서 1개월 lag로 이미 적용된 값
+#     · 전국 거시(macro): total_news, regulation_news, easing_news,
+#                         transport_news, redevelop_news, macro_sentiment
+#     · 구별 로컬(local): local_news_count, local_redevelop_count,
+#                         local_regulation_count, local_transport_count
+NEWS_FEATURES = [
+    # 전국 거시 뉴스 (5개 구 공통)
+    "total_news",             # 전체 뉴스량 (시장 관심도 proxy)
+    "regulation_news",        # 규제/긴축 뉴스 수 (악재)
+    "easing_news",            # 완화/부양 뉴스 수 (호재)
+    "transport_news",         # GTX/교통 뉴스 수
+    "redevelop_news",         # 재개발/뉴타운 뉴스 수
+    "macro_sentiment",        # 방향성 지수 (-1 ~ +1)
+    # 구별 로컬 뉴스 (구 특화)
+    "local_news_count",       # 해당 구 언급 뉴스 수
+    "local_redevelop_count",  # 해당 구 재개발 뉴스 수
+    "local_regulation_count", # 해당 구 규제 뉴스 수
+    "local_transport_count",  # 해당 구 교통 뉴스 수
+]
+
 NUMERIC_FEATURES = [
     "avg_jeonse_10k",    "avg_jeonse_per_sqm",
     "rate_base",
@@ -150,7 +189,7 @@ NUMERIC_FEATURES = [
     "price_mom",         "jeonse_mom",        "rate_change",
     "price_yoy",         "jeonse_yoy",
     "jeonse_ratio",      "month_sin",         "month_cos",
-]
+] + NEWS_FEATURES
 
 # 범주형 피처 (동 → OneHot)
 CATEGORICAL_FEATURES = ["dong"]
@@ -205,6 +244,10 @@ def correlation_analysis(df: pd.DataFrame):
         "rate_base",       "rate_cd",         "rate_bond3y",
         "price_lag1",      "jeonse_lag1",     "rbase_lag1",
         "jeonse_ratio",    "trade_count",
+        # 뉴스 시그널
+        "macro_sentiment", "regulation_news", "easing_news",
+        "redevelop_news",  "transport_news",
+        "local_redevelop_count", "local_news_count",
         "target_1m",       "target_2m",       "target_3m",
     ]
     key_vars = [c for c in key_vars if c in df.columns]
