@@ -61,6 +61,23 @@ REDIS_URL=
 
 **중요:** 모든 환경 변수는 **Production, Preview, Development** 모두에 체크
 
+**CLI로 환경변수 설정:**
+```bash
+# 필수 환경변수 설정
+vercel env add SUPABASE_URL production
+vercel env add SUPABASE_KEY production
+vercel env add SUPABASE_SERVICE_ROLE_KEY production
+vercel env add OPENAI_API_KEY production
+vercel env add APP_ENV production
+vercel env add DEBUG production
+
+# 환경변수 확인
+vercel env ls
+
+# 로컬에서 환경변수 테스트
+vercel env pull .env.vercel
+```
+
 ### Step 3: 프로덕션 배포
 
 ```bash
@@ -138,41 +155,167 @@ vercel --prod
 
 ---
 
-## CORS 설정 업데이트
+## CORS 설정 (중요)
 
-백엔드 배포 후 프론트엔드 도메인을 CORS에 추가해야 합니다.
+백엔드 배포 후 **반드시** 프론트엔드 도메인을 CORS에 추가해야 합니다.
 
-### Vercel Dashboard에서 환경 변수 추가:
+### Step 1: 백엔드 환경 변수 추가
+
+**Vercel Dashboard → Backend Project → Settings → Environment Variables:**
 
 ```env
 ALLOWED_ORIGINS=https://your-frontend.vercel.app
 ```
 
-### 또는 코드 수정 (src/config/settings.py):
-
-```python
-class Settings(BaseSettings):
-    # ...
-    allowed_origins: list[str] = []
+**여러 도메인 허용 (쉼표 구분):**
+```env
+ALLOWED_ORIGINS=https://homesignal-ai-frontend.vercel.app,https://custom-domain.com
 ```
 
-### src/main.py 수정:
+**Preview 배포 포함:**
+```env
+ALLOWED_ORIGINS=https://homesignal-ai-frontend.vercel.app,https://*.vercel.app
+```
 
+### Step 2: 재배포
+
+환경 변수 추가 후 **반드시 Redeploy** 클릭:
+1. Vercel Dashboard → Deployments
+2. 최신 배포의 **⋯** 메뉴 → **Redeploy**
+
+### Step 3: CORS 동작 확인
+
+**브라우저 개발자 도구 (Network 탭):**
+```
+Request URL: https://backend.vercel.app/api/v1/forecast
+Request Method: POST
+Origin: https://frontend.vercel.app
+
+Response Headers:
+  Access-Control-Allow-Origin: https://frontend.vercel.app
+  Access-Control-Allow-Credentials: true
+```
+
+**CORS 에러 발생 시:**
+```
+Access to fetch at 'https://backend.vercel.app/api/v1/forecast'
+from origin 'https://frontend.vercel.app' has been blocked by CORS policy
+```
+
+→ `ALLOWED_ORIGINS` 재확인 후 Redeploy
+
+### CORS 설정 구현 (이미 완료)
+
+**src/config/settings.py:**
 ```python
+class Settings(BaseSettings):
+    # CORS 설정
+    allowed_origins: list[str] = []
+
+    @field_validator("allowed_origins", mode="before")
+    @classmethod
+    def parse_allowed_origins(cls, v):
+        if isinstance(v, str):
+            return [x.strip() for x in v.split(",") if x.strip()]
+        return v or []
+```
+
+**src/main.py:**
+```python
+cors_origins = ["*"] if settings.debug else settings.allowed_origins
+
+if not settings.debug and not cors_origins:
+    logger.warning("프로덕션 환경에서 ALLOWED_ORIGINS가 설정되지 않았습니다.")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.allowed_origins if not settings.debug else ["*"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 ```
 
+### CORS 테스트 명령어
+
+```bash
+# Preflight 요청 테스트
+curl -i -X OPTIONS https://backend.vercel.app/api/v1/forecast \
+  -H "Origin: https://frontend.vercel.app" \
+  -H "Access-Control-Request-Method: POST" \
+  -H "Access-Control-Request-Headers: Content-Type"
+
+# 응답 헤더 확인
+# Access-Control-Allow-Origin: https://frontend.vercel.app
+# Access-Control-Allow-Methods: *
+# Access-Control-Allow-Headers: *
+```
+
 ---
 
 ## 문제 해결
 
-### 1. 백엔드 배포 실패
+### 1. 환경변수 누락 오류 (ValidationError) ⭐ 가장 흔한 오류
+
+**증상:**
+```
+pydantic_core._pydantic_core.ValidationError:
+2 validation errors for Settings
+supabase_url
+  Field required [type=missing, input_value={}, input_type=dict]
+supabase_key
+  Field required [type=missing, input_value={}, input_type=dict]
+```
+
+**원인:** Vercel 환경변수 미설정
+
+**해결 (3단계):**
+
+**Step 1: Vercel CLI로 환경변수 설정**
+```bash
+vercel env add SUPABASE_URL production
+vercel env add SUPABASE_KEY production
+vercel env add SUPABASE_SERVICE_ROLE_KEY production
+vercel env add OPENAI_API_KEY production
+vercel env add APP_ENV production
+vercel env add DEBUG production
+
+# 환경변수 확인
+vercel env ls
+```
+
+**Step 2: 또는 Vercel Dashboard 사용**
+1. https://vercel.com/dashboard 접속
+2. 프로젝트 선택 → **Settings** → **Environment Variables**
+3. 필수 환경변수 추가 (아래 참조)
+4. **Production, Preview, Development** 모두 체크
+
+**필수 환경변수:**
+```
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=eyJhbGc...
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGc...
+OPENAI_API_KEY=sk-...
+APP_ENV=production
+DEBUG=false
+```
+
+**Step 3: 재배포**
+```bash
+vercel --prod
+```
+
+**검증:**
+```bash
+# Health check
+curl https://your-backend.vercel.app/health
+
+# 예상 응답: {"status": "ok"}
+```
+
+---
+
+### 2. 백엔드 배포 실패
 
 **증상:** Build failed 또는 Function size exceeded
 
@@ -181,7 +324,7 @@ app.add_middleware(
 - `.vercelignore`에 불필요한 파일 추가
 - `vercel.json`의 Python 버전 확인 (3.12)
 
-### 2. 프론트엔드 빌드 실패
+### 3. 프론트엔드 빌드 실패
 
 **증상:** Type errors 또는 Module not found
 
@@ -192,7 +335,7 @@ npm install
 npm run build  # 로컬에서 빌드 테스트
 ```
 
-### 3. API 호출 실패 (CORS)
+### 4. API 호출 실패 (CORS)
 
 **증상:** Network error 또는 CORS policy error
 
@@ -200,13 +343,24 @@ npm run build  # 로컬에서 빌드 테스트
 - 백엔드 환경 변수에 `ALLOWED_ORIGINS` 추가
 - 프론트엔드 `.env.local`의 `NEXT_PUBLIC_API_URL` 확인
 
-### 4. 환경 변수 미적용
+### 5. 환경 변수 미적용
 
 **증상:** 500 Internal Server Error
 
 **해결:**
 - Vercel Dashboard에서 환경 변수 재확인
 - **Redeploy** 버튼 클릭 (환경 변수 변경 후 재배포 필요)
+
+### 6. Import Time Error (Module-level 초기화 문제)
+
+**증상:** 모듈 임포트 시점에 에러 발생
+
+**원인:** `settings.py`의 module-level에서 Settings 객체를 즉시 생성
+
+**해결:** 이미 적용됨 (2026-03-13 수정)
+- Settings에 기본값 추가
+- Production 환경 검증 로직 추가
+- Mock mode 자동 활성화 (placeholder URL)
 
 ---
 

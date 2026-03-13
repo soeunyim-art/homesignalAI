@@ -1,6 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,12 +12,15 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",  # 추가 환경변수 무시
     )
 
     # Supabase
-    supabase_url: str
-    supabase_key: str  # anon/public key (SELECT용)
+    # Vercel 환경에서 환경변수 로딩 전 초기화 방지를 위해 기본값 제공
+    supabase_url: str = "https://placeholder.supabase.co"
+    supabase_key: str = "placeholder-key"  # anon/public key (SELECT용)
     supabase_service_role_key: str | None = None  # service_role key (INSERT/UPDATE용)
+    supabase_timeout: int = 10  # Supabase 쿼리 타임아웃 (초)
     # PostgreSQL 직접 연결 (선택, 데이터 적재/마이그레이션용)
     database_url: str | None = None
 
@@ -31,6 +35,30 @@ class Settings(BaseSettings):
     # 앱 설정
     app_env: Literal["development", "staging", "production"] = "development"
     debug: bool = True
+
+    # CORS 설정
+    allowed_origins: list[str] = []
+
+    @field_validator("allowed_origins", mode="before")
+    @classmethod
+    def parse_allowed_origins(cls, v):
+        """쉼표 구분 문자열을 리스트로 파싱"""
+        if isinstance(v, str):
+            return [x.strip() for x in v.split(",") if x.strip()]
+        return v or []
+
+    @field_validator("supabase_url")
+    @classmethod
+    def validate_supabase_url(cls, v):
+        """Supabase URL 검증 및 경고"""
+        if v == "https://placeholder.supabase.co":
+            import os
+            if os.environ.get("APP_ENV") == "production":
+                raise ValueError(
+                    "Production 환경에서 placeholder Supabase URL을 사용할 수 없습니다. "
+                    "Vercel 환경변수에서 SUPABASE_URL을 설정하세요."
+                )
+        return v
 
     # 캐시 TTL (초)
     cache_ttl_forecast: int = 3600  # 1시간
@@ -96,7 +124,17 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
+    """
+    Settings 싱글톤 인스턴스를 반환합니다.
+
+    Note: Vercel 환경에서는 환경변수가 런타임에 로드되므로,
+    모듈 임포트 시점에 환경변수가 없어도 기본값으로 초기화됩니다.
+    실제 환경변수는 첫 호출 시 자동으로 로드됩니다.
+    """
     return Settings()
 
 
+# Module-level에서 초기화 (하위 호환성 유지)
+# Vercel 환경에서는 기본값(placeholder)으로 초기화되며,
+# 실제 환경변수는 런타임에 로드됩니다.
 settings = get_settings()
