@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { MapPin, TrendingUp, TrendingDown, AlertTriangle, Info } from "lucide-react";
+import { MapPin, TrendingUp, TrendingDown, AlertTriangle, Info, ChevronRight } from "lucide-react";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { GuDetailSheet } from "./gu-detail-sheet";
 
 const DONG_GU_MAP: Record<string, string> = {
   회기동: "동대문구", 이문동: "동대문구", 청량리동: "동대문구", 전농동: "동대문구",
@@ -55,6 +56,7 @@ function ConfidenceBadge({ score }: { score: number }) {
 export function MapArea() {
   const [guStats, setGuStats] = useState<GuStat[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedGu, setSelectedGu] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/predictions")
@@ -130,7 +132,8 @@ export function MapArea() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.1 }}
-            className={`p-4 rounded-xl border transition-all ${
+            onClick={() => setSelectedGu(stat.gu)}
+            className={`p-4 rounded-xl border transition-all cursor-pointer ${
               stat.avgConfidence < 40
                 ? "bg-destructive/5 border-destructive/20 hover:border-destructive/40"
                 : "bg-secondary/50 border-border hover:border-primary/40"
@@ -167,9 +170,21 @@ export function MapArea() {
               </p>
               <ConfidenceBadge score={stat.avgConfidence} />
             </div>
+
+            <div className="flex items-center justify-end mt-2 pt-2">
+              <span className="text-xs text-muted-foreground flex items-center gap-1 hover:text-primary transition-colors">
+                매매가 추이 보기 <ChevronRight className="h-3 w-3" />
+              </span>
+            </div>
           </motion.div>
         ))}
       </div>
+
+      <GuDetailSheet
+        gu={selectedGu}
+        open={!!selectedGu}
+        onClose={() => setSelectedGu(null)}
+      />
     </Card>
   );
 }
