@@ -1,209 +1,162 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  RadarChart,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
-  Radar,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Cell,
-} from "recharts";
 
-const riskData = [
-  { factor: "공급 리스크", value: 72, fullMark: 100 },
-  { factor: "금리 민감도", value: 85, fullMark: 100 },
-  { factor: "거래 활동성", value: 58, fullMark: 100 },
-  { factor: "정책 영향", value: 65, fullMark: 100 },
-  { factor: "가격 변동성", value: 45, fullMark: 100 },
-];
+const DONG_GU_MAP: Record<string, string> = {
+  회기동: "동대문구", 이문동: "동대문구", 청량리동: "동대문구", 전농동: "동대문구",
+  답십리동: "동대문구", 장안동: "동대문구", 용두동: "동대문구", 신설동: "동대문구",
+  휘경동: "동대문구", 제기동: "동대문구",
+  길음동: "성북구", 동소문동: "성북구", 돈암동: "성북구", 안암동: "성북구",
+  보문동: "성북구", 정릉동: "성북구", 석관동: "성북구", 장위동: "성북구",
+  종암동: "성북구", 월곡동: "성북구",
+  면목동: "중랑구", 묵동: "중랑구", 신내동: "중랑구", 중화동: "중랑구",
+  망우동: "중랑구", 상봉동: "중랑구",
+  번동: "강북구", 미아동: "강북구", 수유동: "강북구", 우이동: "강북구",
+  방학동: "도봉구", 창동: "도봉구", 도봉동: "도봉구", 쌍문동: "도봉구",
+};
 
-const supplyData = [
-  { district: "강남구", supply: 2400, color: "#4ADE80" },
-  { district: "서초구", supply: 1800, color: "#3B82F6" },
-  { district: "송파구", supply: 3200, color: "#4ADE80" },
-  { district: "동대문구", supply: 1200, color: "#F59E0B" },
-  { district: "마포구", supply: 950, color: "#3B82F6" },
-  { district: "용산구", supply: 680, color: "#4ADE80" },
-];
+const GU_ORDER = ["동대문구", "성북구", "중랑구", "강북구", "도봉구"];
 
-const districtStats = [
-  { name: "동대문구", avgPrice: "8.2억", change: "+3.2%", risk: "보통", aiScore: 76 },
-  { name: "중랑구", avgPrice: "6.8억", change: "+2.1%", risk: "낮음", aiScore: 82 },
-  { name: "성북구", avgPrice: "7.5억", change: "+1.8%", risk: "낮음", aiScore: 79 },
-  { name: "광진구", avgPrice: "9.4억", change: "+4.5%", risk: "보통", aiScore: 74 },
-];
+type Prediction = {
+  dong: string;
+  current_price_10k: number;
+  change_1m_pct: number;
+  change_3m_pct: number;
+  base_ym: string;
+};
+
+type GuStat = {
+  name: string;
+  avgPrice: string;
+  change: string;
+  change3m: string;
+  dongCount: number;
+};
 
 interface RegionAnalysisProps {
   searchQuery: string;
 }
 
 export function RegionAnalysis({ searchQuery }: RegionAnalysisProps) {
+  const [guStats, setGuStats] = useState<GuStat[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [baseYm, setBaseYm] = useState("");
+
+  useEffect(() => {
+    fetch("/api/predictions")
+      .then((r) => r.json())
+      .then((preds: Prediction[]) => {
+        if (!preds || preds.length === 0) return;
+
+        if (preds[0].base_ym) {
+          const [y, m] = preds[0].base_ym.split("-");
+          setBaseYm(`${y}.${m.padStart(2, "0")}`);
+        }
+
+        const guMap: Record<string, Prediction[]> = {};
+        for (const p of preds) {
+          const gu = DONG_GU_MAP[p.dong] ?? p.dong;
+          if (!guMap[gu]) guMap[gu] = [];
+          guMap[gu].push(p);
+        }
+
+        const filtered = GU_ORDER.filter((gu) => {
+          if (!guMap[gu]?.length) return false;
+          if (!searchQuery) return true;
+          return gu.includes(searchQuery);
+        });
+
+        const stats = filtered.map((gu) => {
+          const rows = guMap[gu];
+          const avgPrice =
+            rows.reduce((s, r) => s + (r.current_price_10k ?? 0), 0) / rows.length;
+          const change1m =
+            rows.reduce((s, r) => s + (r.change_1m_pct ?? 0), 0) / rows.length;
+          const change3m =
+            rows.reduce((s, r) => s + (r.change_3m_pct ?? 0), 0) / rows.length;
+          return {
+            name: gu,
+            avgPrice: `${(avgPrice / 10000).toFixed(1)}억`,
+            change: `${change1m > 0 ? "+" : ""}${change1m.toFixed(1)}%`,
+            change3m: `${change3m > 0 ? "+" : ""}${change3m.toFixed(1)}%`,
+            dongCount: rows.length,
+          };
+        });
+
+        setGuStats(stats);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [searchQuery]);
+
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold text-foreground">
-            {searchQuery || "서울"} 지역 분석
+            {searchQuery || "분석 대상 5개 구"} 지역 분석
           </h2>
           <p className="text-sm text-muted-foreground">
-            AI 기반 지역별 투자 리스크 및 공급 분석
+            AI 기반 구별 매매가 및 변동률 분석
           </p>
         </div>
-        <Badge variant="outline" className="text-primary border-primary">
-          분석 기준일: 2024.03.07
-        </Badge>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Risk Radar Chart */}
-        <Card className="bg-card border-border">
-          <CardHeader>
-            <CardTitle className="text-base font-medium flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-primary" />
-              리스크 분석 레이더
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={280}>
-              <RadarChart data={riskData} cx="50%" cy="50%" outerRadius="70%">
-                <PolarGrid stroke="#374151" />
-                <PolarAngleAxis
-                  dataKey="factor"
-                  tick={{ fill: "#9CA3AF", fontSize: 11 }}
-                />
-                <PolarRadiusAxis
-                  angle={30}
-                  domain={[0, 100]}
-                  tick={{ fill: "#6B7280", fontSize: 10 }}
-                />
-                <Radar
-                  name="리스크 지수"
-                  dataKey="value"
-                  stroke="#4ADE80"
-                  fill="#4ADE80"
-                  fillOpacity={0.3}
-                />
-              </RadarChart>
-            </ResponsiveContainer>
-            <div className="mt-4 p-3 bg-muted/50 rounded-lg">
-              <p className="text-xs text-muted-foreground">
-                <span className="text-foreground font-medium">종합 리스크: 중간 (65/100)</span>
-                <br />
-                금리 민감도가 높아 금리 변동 시 가격 영향 가능성 있음
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Supply Bar Chart */}
-        <Card className="bg-card border-border">
-          <CardHeader>
-            <CardTitle className="text-base font-medium flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-accent" />
-              향후 2년 공급 물량 (세대수)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={supplyData} layout="vertical">
-                <XAxis type="number" tick={{ fill: "#9CA3AF", fontSize: 11 }} />
-                <YAxis
-                  type="category"
-                  dataKey="district"
-                  tick={{ fill: "#9CA3AF", fontSize: 11 }}
-                  width={60}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "#1F2937",
-                    border: "1px solid #374151",
-                    borderRadius: "8px",
-                  }}
-                  labelStyle={{ color: "#E5E7EB" }}
-                  itemStyle={{ color: "#4ADE80" }}
-                  formatter={(value: number) => [`${value.toLocaleString()} 세대`, "공급 물량"]}
-                />
-                <Bar dataKey="supply" radius={[0, 4, 4, 0]}>
-                  {supplyData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-            <div className="mt-4 p-3 bg-muted/50 rounded-lg">
-              <p className="text-xs text-muted-foreground">
-                <span className="text-foreground font-medium">송파구 공급 과잉 주의</span>
-                <br />
-                2025-2026년 대규모 입주 예정으로 전세가 하락 리스크 존재
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+        {baseYm && (
+          <Badge variant="outline" className="text-primary border-primary">
+            분석 기준: {baseYm}
+          </Badge>
+        )}
       </div>
 
       {/* District Comparison Table */}
       <Card className="bg-card border-border">
         <CardHeader>
-          <CardTitle className="text-base font-medium">주변 지역 비교</CardTitle>
+          <CardTitle className="text-base font-medium">구별 비교</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left py-3 px-4 text-muted-foreground font-medium">지역</th>
-                  <th className="text-right py-3 px-4 text-muted-foreground font-medium">평균가</th>
-                  <th className="text-right py-3 px-4 text-muted-foreground font-medium">전월 대비</th>
-                  <th className="text-center py-3 px-4 text-muted-foreground font-medium">리스크</th>
-                  <th className="text-right py-3 px-4 text-muted-foreground font-medium">AI 점수</th>
-                </tr>
-              </thead>
-              <tbody>
-                {districtStats.map((district) => (
-                  <tr key={district.name} className="border-b border-border/50 hover:bg-muted/30">
-                    <td className="py-3 px-4 font-medium text-foreground">{district.name}</td>
-                    <td className="py-3 px-4 text-right text-foreground">{district.avgPrice}</td>
-                    <td className={`py-3 px-4 text-right ${
-                      district.change.startsWith("+") ? "text-primary" : "text-destructive"
-                    }`}>
-                      {district.change}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <Badge
-                        variant="outline"
-                        className={
-                          district.risk === "낮음"
-                            ? "border-primary text-primary"
-                            : district.risk === "보통"
-                            ? "border-chart-3 text-chart-3"
-                            : "border-destructive text-destructive"
-                        }
-                      >
-                        {district.risk}
-                      </Badge>
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <span className="text-primary font-medium">{district.aiScore}</span>
-                      <span className="text-muted-foreground">/100</span>
-                    </td>
+          {loading ? (
+            <p className="text-sm text-muted-foreground text-center py-8">로딩 중...</p>
+          ) : guStats.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              {searchQuery ? `"${searchQuery}" 데이터가 없습니다.` : "예측 데이터가 없습니다. predict_model.py를 먼저 실행해 주세요."}
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="text-left py-3 px-4 text-muted-foreground font-medium">지역</th>
+                    <th className="text-right py-3 px-4 text-muted-foreground font-medium">평균 매매가</th>
+                    <th className="text-right py-3 px-4 text-muted-foreground font-medium">1개월 변동</th>
+                    <th className="text-right py-3 px-4 text-muted-foreground font-medium">3개월 예측</th>
+                    <th className="text-right py-3 px-4 text-muted-foreground font-medium">분석 동 수</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {guStats.map((stat) => (
+                    <tr key={stat.name} className="border-b border-border/50 hover:bg-muted/30">
+                      <td className="py-3 px-4 font-medium text-foreground">{stat.name}</td>
+                      <td className="py-3 px-4 text-right text-foreground">{stat.avgPrice}</td>
+                      <td className={`py-3 px-4 text-right font-medium ${stat.change.startsWith("+") ? "text-primary" : "text-destructive"}`}>
+                        {stat.change}
+                      </td>
+                      <td className={`py-3 px-4 text-right font-medium ${stat.change3m.startsWith("+") ? "text-primary" : "text-destructive"}`}>
+                        {stat.change3m}
+                      </td>
+                      <td className="py-3 px-4 text-right text-muted-foreground">
+                        {stat.dongCount}개 동
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Disclaimer */}
       <p className="text-xs text-muted-foreground text-center">
         * 리스크 분석은 과거 데이터 기반 AI 모델의 예측이며, 실제 시장 상황과 다를 수 있습니다.
       </p>
