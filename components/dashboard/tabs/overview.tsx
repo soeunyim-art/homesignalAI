@@ -16,7 +16,7 @@ export function Overview({ searchQuery }: OverviewProps) {
       {/* Header */}
       <div>
         <h2 className="text-xl font-semibold text-foreground">
-          {searchQuery ? `${searchQuery} 검색 결과` : "분석 대상 5개 구"} 종합 개요
+          {searchQuery ? `${searchQuery} 검색 결과` : "서울 동북권"} 종합 개요
         </h2>
         <p className="text-sm text-muted-foreground">
           실시간 시장 현황 및 AI 분석 요약
@@ -26,7 +26,7 @@ export function Overview({ searchQuery }: OverviewProps) {
       {/* KPI Ticker Row */}
       <section>
         <p className="text-xs text-muted-foreground mb-2">
-          · 아래 수치는 검색 구 무관하게 <span className="text-foreground font-medium">분석 대상 5개 구 전체 평균</span>입니다
+          · 아래 수치는 검색 구 무관하게 <span className="text-foreground font-medium">서울 동북권 5개 구 전체 평균</span>입니다
         </p>
         <KPITicker />
       </section>

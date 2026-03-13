@@ -39,7 +39,7 @@ export function KPITicker() {
 
   const kpiData = [
     {
-      label: "5개 구 평균 매매가",
+      label: "동북권 평균 매매가",
       value: loading ? "..." : avgPrice ? fmt억(avgPrice) : "-",
       change: avgChange1m != null ? fmtPct(avgChange1m) : "-",
       trend: (avgChange1m ?? 0) >= 0 ? "up" : "down",
