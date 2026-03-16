@@ -11,7 +11,7 @@ pydantic-settings>=2.0
 
 # Database and storage
 supabase>=2.0
-pyiceberg>=0.5.0
+pyiceberg>=0.5.0  # Required for supabase storage3
 
 # HTTP client
 httpx>=0.26.0
