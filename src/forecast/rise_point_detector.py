@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Literal
 
-import numpy as np
+# import numpy as np (Removed to avoid ImportError on Vercel)
 
 logger = logging.getLogger(__name__)
 
@@ -185,16 +185,26 @@ class RisePointDetector:
 
     @staticmethod
     def _calculate_moving_average(values: list[float], window: int) -> list[float]:
-        """이동평균 계산"""
+        """이동평균 계산 (pure Python)"""
+        if not values:
+            return []
+        
         if len(values) < window:
-            return values
+            # 데이터가 윈도우보다 적으면 전체 평균으로 시작하거나 그대로 반환
+            ma = []
+            for i in range(len(values)):
+                subset = values[: i + 1]
+                ma.append(sum(subset) / len(subset))
+            return ma
 
         ma = []
         for i in range(len(values)):
             if i < window - 1:
-                ma.append(np.mean(values[: i + 1]))
+                subset = values[: i + 1]
+                ma.append(sum(subset) / len(subset))
             else:
-                ma.append(np.mean(values[i - window + 1 : i + 1]))
+                subset = values[i - window + 1 : i + 1]
+                ma.append(sum(subset) / len(subset))
 
         return ma
 

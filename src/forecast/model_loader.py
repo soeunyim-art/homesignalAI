@@ -11,8 +11,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-import lightgbm as lgb
-from prophet import Prophet
+# import lightgbm as lgb (Moved to load_lightgbm)
+# from prophet import Prophet (Moved to load_prophet)
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +28,14 @@ class ModelLoader:
 
     def load_prophet(
         self, region: str = "청량리동", period_type: Literal["week", "month"] = "week"
-    ) -> Prophet | None:
+    ) -> "Prophet | None":
         """Prophet 모델 로드"""
+        try:
+            from prophet import Prophet
+        except ImportError:
+            logger.error("Prophet 라이브러리가 설치되어 있지 않습니다.")
+            return None
+
         model_path = self.models_dir / f"prophet_{region}_{period_type}_v1.pkl"
 
         if not model_path.exists():
@@ -47,8 +53,14 @@ class ModelLoader:
 
     def load_lightgbm(
         self, region: str = "청량리동", period_type: Literal["week", "month"] = "week"
-    ) -> lgb.LGBMRegressor | None:
+    ) -> "lgb.LGBMRegressor | None":
         """LightGBM 모델 로드"""
+        try:
+            import lightgbm as lgb
+        except ImportError:
+            logger.error("LightGBM 라이브러리가 설치되어 있지 않습니다.")
+            return None
+
         model_path = self.models_dir / f"lightgbm_{region}_{period_type}_v1.pkl"
 
         if not model_path.exists():

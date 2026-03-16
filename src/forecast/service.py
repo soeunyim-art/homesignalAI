@@ -1,7 +1,7 @@
 import logging
 from datetime import date, timedelta
 
-import pandas as pd
+# import pandas as pd (Moved to individual methods to avoid ImportError on Vercel)
 
 from src.config import settings
 from src.forecast.rise_point_detector import RisePointDetector
@@ -104,6 +104,12 @@ class ForecastService:
     async def _run_real_forecast(self, request: ForecastRequest) -> list[ForecastPoint]:
         """실제 Prophet + LightGBM 앙상블 예측"""
         try:
+            import pandas as pd
+        except ImportError:
+            logger.error("Pandas를 로드할 수 없습니다. 실제 모델 예측이 불가합니다.")
+            return await self._run_mock_forecast(request)
+
+        try:
             # 1. 모델 로드
             prophet_model = self.model_loader.load_prophet(
                 region=request.region, period_type=request.period
@@ -204,8 +210,15 @@ class ForecastService:
 
     async def _get_latest_features(
         self, region: str, period: str, limit: int = 52
-    ) -> pd.DataFrame:
+    ) -> "pd.DataFrame":
         """ml_training_features에서 최신 Feature 조회"""
+        try:
+            import pandas as pd
+        except ImportError:
+            logger.error("Pandas를 로드할 수 없습니다. Feature 조회 결과를 DataFrame으로 변환할 수 없습니다.")
+            # fallback or return empty dict if needed, but here we expect DataFrame
+            raise ImportError("Pandas required for this method")
+
         response = (
             self.db.table("ml_training_features")
             .select("*")

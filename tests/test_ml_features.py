@@ -5,11 +5,16 @@ ML Training Features 생성 및 모델 예측 테스트
 import pytest
 from datetime import date, timedelta
 import pandas as pd
+import os
 
 from src.shared.database import get_supabase_client
 
+# Mock mode 감지
+IS_MOCK_MODE = "placeholder" in os.environ.get("SUPABASE_URL", "")
+
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(IS_MOCK_MODE, reason="Supabase 통합 테스트 - Mock mode에서는 skip")
 async def test_ml_training_features_schema():
     """ml_training_features 테이블 스키마 확인"""
     supabase = get_supabase_client()
@@ -38,6 +43,7 @@ async def test_ml_training_features_schema():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(IS_MOCK_MODE, reason="Supabase 통합 테스트 - Mock mode에서는 skip")
 async def test_policy_events_schema():
     """policy_events 테이블 스키마 확인"""
     supabase = get_supabase_client()
@@ -83,6 +89,7 @@ def test_moving_average_calculation():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(IS_MOCK_MODE, reason="Supabase 통합 테스트 - Mock mode에서는 skip")
 async def test_feature_query_performance():
     """Feature 조회 성능 테스트"""
     supabase = get_supabase_client()

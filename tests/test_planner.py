@@ -19,41 +19,41 @@ class TestEntityExtractor:
     def setup_method(self):
         self.extractor = EntityExtractor()
 
-    def test_extract_single_region(self):
+    async def test_extract_single_region(self):
         """단일 지역 추출"""
         query = "청량리 아파트 시세가 얼마인가요?"
-        entities = self.extractor.extract(query)
+        entities = await self.extractor.extract(query)
 
         assert "청량리" in entities.regions
         assert "아파트" in entities.property_types
 
-    def test_extract_multiple_regions(self):
+    async def test_extract_multiple_regions(self):
         """다중 지역 추출"""
         query = "청량리와 이문동 중 어디가 더 오를까요?"
-        entities = self.extractor.extract(query)
+        entities = await self.extractor.extract(query)
 
         assert "청량리" in entities.regions
         assert "이문동" in entities.regions or "이문" in entities.regions
 
-    def test_extract_keywords(self):
+    async def test_extract_keywords(self):
         """키워드 추출"""
         query = "GTX-C 개통이 재개발 시세에 미치는 영향은?"
-        entities = self.extractor.extract(query)
+        entities = await self.extractor.extract(query)
 
         assert any("GTX" in kw.upper() for kw in entities.keywords)
         assert "재개발" in entities.keywords
 
-    def test_extract_time_expressions(self):
+    async def test_extract_time_expressions(self):
         """시간 표현 추출"""
         query = "최근 1년간 동대문구 아파트 추이는?"
-        entities = self.extractor.extract(query)
+        entities = await self.extractor.extract(query)
 
         assert len(entities.time_expressions) > 0
 
-    def test_extract_empty_query(self):
+    async def test_extract_empty_query(self):
         """빈 쿼리 처리"""
         query = ""
-        entities = self.extractor.extract(query)
+        entities = await self.extractor.extract(query)
 
         assert entities.regions == []
         assert entities.keywords == []
@@ -65,17 +65,17 @@ class TestQueryDecomposer:
     def setup_method(self):
         self.decomposer = QueryDecomposer()
 
-    def test_simple_query_no_decomposition(self):
+    async def test_simple_query_no_decomposition(self):
         """단순 쿼리 - 분해 없음"""
         query = "청량리 아파트 시세가 얼마인가요?"
         intents = [QueryIntent.PRICE_INQUIRY]
 
-        sub_queries = self.decomposer.decompose(query, intents)
+        sub_queries = await self.decomposer.decompose(query, intents)
 
         assert len(sub_queries) == 1
         assert sub_queries[0].intent == QueryIntent.PRICE_INQUIRY
 
-    def test_comparison_query_decomposition(self):
+    async def test_comparison_query_decomposition(self):
         """비교 쿼리 분해"""
         query = "청량리와 이문동 중 어디가 더 오를까요?"
         intents = [QueryIntent.COMPARISON, QueryIntent.FORECAST]
@@ -86,7 +86,7 @@ class TestQueryDecomposer:
             property_types=[],
         )
 
-        sub_queries = self.decomposer.decompose(query, intents, entities)
+        sub_queries = await self.decomposer.decompose(query, intents, entities)
 
         # 각 지역별 예측 + 비교 집계 = 최소 3개
         assert len(sub_queries) >= 3
@@ -99,7 +99,7 @@ class TestQueryDecomposer:
         comparison_queries = [sq for sq in sub_queries if sq.intent == QueryIntent.COMPARISON]
         assert len(comparison_queries) >= 1
 
-    def test_news_analysis_decomposition(self):
+    async def test_news_analysis_decomposition(self):
         """뉴스 분석 쿼리 분해"""
         query = "GTX-C가 청량리 시세에 미치는 영향은?"
         intents = [QueryIntent.NEWS_ANALYSIS]
@@ -110,7 +110,7 @@ class TestQueryDecomposer:
             property_types=[],
         )
 
-        sub_queries = self.decomposer.decompose(query, intents, entities)
+        sub_queries = await self.decomposer.decompose(query, intents, entities)
 
         # 뉴스 검색 + 예측 포함
         news_queries = [sq for sq in sub_queries if sq.intent == QueryIntent.NEWS_ANALYSIS]

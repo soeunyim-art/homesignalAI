@@ -90,7 +90,7 @@ class ChatService:
 
         # 2. 엔티티 추출 및 질문 분해
         entities = await self.decomposer.extractor.extract(request.message)
-        sub_queries = self.decomposer.decompose(request.message, intents, entities)
+        sub_queries = await self.decomposer.decompose(request.message, intents, entities)
 
         # 3. 실행 계획 생성
         plan = self.plan_generator.generate(request.message, intents, sub_queries)

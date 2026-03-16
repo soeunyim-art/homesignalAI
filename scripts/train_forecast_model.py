@@ -38,9 +38,18 @@ class ForecastModelTrainer:
         self.models_dir.mkdir(exist_ok=True)
 
     async def load_training_data(
-        self, region: str, period_type: str = "week"
-    ) -> pd.DataFrame:
-        """ml_training_features에서 학습 데이터 로드"""
+        self, region: str, period_type: str = "week", use_split: bool = True
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """ml_training_features에서 학습 데이터 로드
+        
+        Args:
+            region: 지역명
+            period_type: 기간 타입 (week/month)
+            use_split: train_test_split 플래그 사용 여부
+            
+        Returns:
+            (train_df, test_df) 튜플
+        """
         logger.info(f"학습 데이터 로드 중: {region}, {period_type}")
 
         response = (
@@ -59,17 +68,45 @@ class ForecastModelTrainer:
         df["period_date"] = pd.to_datetime(df["period_date"])
 
         logger.info(f"로드된 데이터: {len(df)}개 행")
-        return df
 
-    def train_prophet(self, features: pd.DataFrame) -> Prophet:
-        """Prophet 모델 학습"""
+        # train_test_split 플래그 기반 분할
+        if use_split and "train_test_split" in df.columns:
+            train_df = df[df["train_test_split"] == "train"].copy()
+            test_df = df[df["train_test_split"] == "test"].copy()
+
+            if len(train_df) > 0 and len(test_df) > 0:
+                logger.info(
+                    f"  DB 플래그 기반 분할: Train {len(train_df)}개, Test {len(test_df)}개"
+                )
+                return train_df, test_df
+            else:
+                logger.warning(
+                    "train_test_split 플래그가 설정되지 않았습니다. Fallback 분할 수행"
+                )
+
+        # Fallback: 시간 기반 분할 (70:30)
+        train_size = int(len(df) * 0.7)
+        train_df = df[:train_size].copy()
+        test_df = df[train_size:].copy()
+
+        logger.info(
+            f"  Fallback 시간 기반 분할: Train {len(train_df)}개, Test {len(test_df)}개"
+        )
+        return train_df, test_df
+
+    def train_prophet(self, train_features: pd.DataFrame) -> Prophet:
+        """Prophet 모델 학습
+        
+        Args:
+            train_features: 학습용 데이터프레임
+        """
         logger.info("Prophet 모델 학습 중...")
 
         # Prophet 형식으로 변환
         prophet_df = pd.DataFrame(
             {
-                "ds": features["period_date"],
-                "y": features["avg_price"],
+                "ds": train_features["period_date"],
+                "y": train_features["avg_price"],
             }
         )
 
@@ -91,8 +128,8 @@ class ForecastModelTrainer:
             "news_transport_freq",
         ]
         for col in news_features:
-            if col in features.columns:
-                prophet_df[col] = features[col].fillna(0)
+            if col in train_features.columns:
+                prophet_df[col] = train_features[col].fillna(0)
                 model.add_regressor(col)
 
         # 이벤트 피처 추가
@@ -103,15 +140,15 @@ class ForecastModelTrainer:
             "event_loan_regulation",
         ]
         for col in event_features:
-            if col in features.columns:
-                prophet_df[col] = features[col].astype(int)
+            if col in train_features.columns:
+                prophet_df[col] = train_features[col].astype(int)
                 model.add_regressor(col)
 
         # 계절성 피처 추가
         season_features = ["season_school", "season_moving", "season_wedding"]
         for col in season_features:
-            if col in features.columns:
-                prophet_df[col] = features[col].astype(int)
+            if col in train_features.columns:
+                prophet_df[col] = train_features[col].astype(int)
                 model.add_regressor(col)
 
         # 학습
@@ -120,8 +157,12 @@ class ForecastModelTrainer:
         logger.info("Prophet 학습 완료")
         return model
 
-    def train_lightgbm(self, features: pd.DataFrame) -> lgb.LGBMRegressor:
-        """LightGBM 모델 학습"""
+    def train_lightgbm(self, train_features: pd.DataFrame) -> lgb.LGBMRegressor:
+        """LightGBM 모델 학습
+        
+        Args:
+            train_features: 학습용 데이터프레임
+        """
         logger.info("LightGBM 모델 학습 중...")
 
         # Feature 컬럼 정의
@@ -147,15 +188,15 @@ class ForecastModelTrainer:
         ]
 
         # 존재하는 컬럼만 사용
-        available_cols = [col for col in feature_cols if col in features.columns]
+        available_cols = [col for col in feature_cols if col in train_features.columns]
 
-        X = features[available_cols].fillna(0)
+        X = train_features[available_cols].fillna(0)
         # Boolean을 int로 변환
         for col in X.columns:
             if X[col].dtype == bool:
                 X[col] = X[col].astype(int)
 
-        y = features["avg_price"]
+        y = train_features["avg_price"]
 
         # LightGBM 모델 초기화
         model = lgb.LGBMRegressor(
@@ -177,18 +218,20 @@ class ForecastModelTrainer:
 
     def evaluate_models(
         self,
-        features: pd.DataFrame,
+        test_df: pd.DataFrame,
         prophet_model: Prophet,
         lightgbm_model: lgb.LGBMRegressor,
         ensemble_weight: float = 0.6,
     ) -> dict:
-        """모델 평가 (Train/Test Split)"""
+        """모델 평가 (Test 데이터 기반)
+        
+        Args:
+            test_df: 평가용 데이터프레임
+            prophet_model: 학습된 Prophet 모델
+            lightgbm_model: 학습된 LightGBM 모델
+            ensemble_weight: Prophet 가중치 (기본값: 0.6)
+        """
         logger.info("모델 평가 중...")
-
-        # Train/Test 분할 (80/20)
-        train_size = int(len(features) * 0.8)
-        train_df = features[:train_size]
-        test_df = features[train_size:]
 
         if len(test_df) < 5:
             logger.warning("테스트 데이터가 부족합니다. 평가 생략")
@@ -329,17 +372,25 @@ async def main():
     trainer = ForecastModelTrainer(supabase)
 
     try:
-        # 1. 학습 데이터 로드
-        features = await trainer.load_training_data(args.region, args.period_type)
+        # 1. 학습 데이터 로드 (Train/Test 분할)
+        train_df, test_df = await trainer.load_training_data(
+            args.region, args.period_type
+        )
+
+        logger.info(f"\n데이터 분할:")
+        logger.info(f"  Train: {len(train_df)}개 행")
+        logger.info(f"  Test: {len(test_df)}개 행")
 
         # 2. Prophet 학습
-        prophet_model = trainer.train_prophet(features)
+        prophet_model = trainer.train_prophet(train_df)
 
         # 3. LightGBM 학습
-        lightgbm_model = trainer.train_lightgbm(features)
+        lightgbm_model = trainer.train_lightgbm(train_df)
 
-        # 4. 평가
-        metrics = trainer.evaluate_models(features, prophet_model, lightgbm_model)
+        # 4. 평가 (Test 데이터 사용)
+        metrics = trainer.evaluate_models(
+            test_df, prophet_model, lightgbm_model
+        )
 
         # 5. 모델 저장
         if not args.dry_run:

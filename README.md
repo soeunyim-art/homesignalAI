@@ -119,7 +119,9 @@ homesignal-ai/
 |------|------|
 | [CLAUDE.md](CLAUDE.md) | 개발 가이드 (명령어, 아키텍처) |
 | [docs/01_PRD_HomeSignalAI.md](docs/01_PRD_HomeSignalAI.md) | 요구사항 정의 |
+| [docs/02_Architecture_Design.md](docs/02_Architecture_Design.md) | 시스템 아키텍처 설계 |
 | [docs/03_AI_Model_Pipeline.md](docs/03_AI_Model_Pipeline.md) | ML 파이프라인 |
+| **[docs/07_API_Contract_Rules.md](docs/07_API_Contract_Rules.md)** | **DB/Backend/Frontend 공통 규칙** ⭐ |
 | [docs/ML_Feature_통합_테이블_가이드.md](docs/ML_Feature_통합_테이블_가이드.md) | Feature 테이블 가이드 |
 | [docs/12_Vector_DB_Setup_Guide.md](docs/12_Vector_DB_Setup_Guide.md) | Vector DB 설정 |
 | [VERCEL_DEPLOYMENT_GUIDE.md](VERCEL_DEPLOYMENT_GUIDE.md) | Vercel 배포 가이드 |

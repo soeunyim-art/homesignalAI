@@ -66,26 +66,8 @@ class TestAIKeywordExtractor:
     """AI 키워드 추출기 테스트"""
 
     @pytest.fixture
-    def mock_ai_client(self, mocker):
-        """Mock AI 클라이언트"""
-        client = mocker.Mock(spec=AIClient)
-        
-        # Mock 응답
-        async def mock_generate(*args, **kwargs):
-            return '''```json
-{
-  "keywords": ["청량리", "재개발", "GTX"],
-  "categories": ["redevelopment", "transport"],
-  "intent": "forecast",
-  "confidence": 0.9
-}
-```'''
-        
-        client.generate = mock_generate
-        return client
-
-    @pytest.fixture
     def extractor(self, mock_ai_client) -> AIKeywordExtractor:
+        """AI extractor with mock client"""
         return AIKeywordExtractor(mock_ai_client)
 
     @pytest.mark.asyncio

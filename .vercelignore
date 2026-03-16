@@ -1,3 +1,6 @@
+# Frontend (백엔드 배포 시 불필요)
+frontend/
+
 # Test files
 tests/
 *.test.py

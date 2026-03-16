@@ -124,8 +124,19 @@ RETURNS TABLE (
     news_gtx_freq INT,
     news_redevelopment_freq INT,
     news_policy_freq INT,
+    news_supply_freq INT,
+    news_transport_freq INT,
+    news_economic_freq INT,
+    news_social_freq INT,
+    news_location_freq INT,
     event_gtx_announcement BOOLEAN,
-    season_school BOOLEAN
+    event_redevelopment_approval BOOLEAN,
+    event_interest_rate_change BOOLEAN,
+    event_loan_regulation BOOLEAN,
+    event_sales_restriction BOOLEAN,
+    season_school BOOLEAN,
+    season_moving BOOLEAN,
+    season_wedding BOOLEAN
 )
 LANGUAGE plpgsql
 AS $$
@@ -139,8 +150,19 @@ BEGIN
         mtf.news_gtx_freq,
         mtf.news_redevelopment_freq,
         mtf.news_policy_freq,
+        mtf.news_supply_freq,
+        mtf.news_transport_freq,
+        mtf.news_economic_freq,
+        mtf.news_social_freq,
+        mtf.news_location_freq,
         mtf.event_gtx_announcement,
-        mtf.season_school
+        mtf.event_redevelopment_approval,
+        mtf.event_interest_rate_change,
+        mtf.event_loan_regulation,
+        mtf.event_sales_restriction,
+        mtf.season_school,
+        mtf.season_moving,
+        mtf.season_wedding
     FROM ml_training_features mtf
     WHERE mtf.region = p_region
       AND mtf.period_type = p_period_type

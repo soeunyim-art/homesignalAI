@@ -12,13 +12,14 @@ logger = logging.getLogger(__name__)
 
 # Supabase 라이브러리 동적 임포트 시도
 try:
-    from supabase import Client, create_client
+    from supabase import Client, ClientOptions, create_client
 
     SUPABASE_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Supabase 라이브러리 로드 실패: {e}")
     SUPABASE_AVAILABLE = False
     Client = Any  # type: ignore
+    ClientOptions = Any  # type: ignore
 
 
 class MockSupabaseTable:
@@ -95,6 +96,21 @@ class MockSupabaseAuth:
         return MockResponse()
 
 
+class MockRPCCall:
+    """Mock RPC 호출 결과 - 빈 결과 반환"""
+
+    def __init__(self, fn_name: str, params: dict):
+        self._fn_name = fn_name
+        self._params = params
+
+    def execute(self):
+        class MockResponse:
+            data: list = []
+            count: int = 0
+
+        return MockResponse()
+
+
 class MockSupabaseClient:
     """Mock Supabase 클라이언트 - 개발/테스트용"""
 
@@ -107,6 +123,11 @@ class MockSupabaseClient:
         if table_name not in self._tables:
             self._tables[table_name] = MockSupabaseTable(table_name)
         return self._tables[table_name]
+
+    def rpc(self, fn_name: str, params: dict | None = None) -> MockRPCCall:
+        """Mock RPC 함수 호출"""
+        logger.debug(f"MockRPC 호출: {fn_name}({params})")
+        return MockRPCCall(fn_name, params or {})
 
 
 @lru_cache
@@ -128,6 +149,13 @@ def get_supabase_client(use_service_role: bool = False) -> Client:
         logger.warning("Supabase placeholder URL 감지 - MockSupabaseClient 사용")
         return MockSupabaseClient()  # type: ignore
 
+    # ClientOptions 설정 (타임아웃, 연결 풀 등)
+    options = ClientOptions(
+        postgrest_client_timeout=settings.supabase_timeout,
+        storage_client_timeout=settings.supabase_timeout,
+        schema="public",
+    )
+
     if use_service_role:
         if not settings.supabase_service_role_key:
             raise ValueError(
@@ -135,6 +163,10 @@ def get_supabase_client(use_service_role: bool = False) -> Client:
                 "Ingest API 사용을 위해 .env에 service_role 키를 추가하세요."
             )
         logger.debug("service_role 키로 Supabase 클라이언트 생성")
-        return create_client(settings.supabase_url, settings.supabase_service_role_key)
-    
-    return create_client(settings.supabase_url, settings.supabase_key)
+        return create_client(
+            settings.supabase_url,
+            settings.supabase_service_role_key,
+            options=options,
+        )
+
+    return create_client(settings.supabase_url, settings.supabase_key, options=options)

@@ -135,8 +135,10 @@ class SupabaseVectorDB(VectorDBInterface):
                 logger.warning("빈 쿼리 임베딩 생성됨")
                 return []
 
-            # 2. Supabase RPC 함수 호출
-            client = self._get_client()
+            # 2. Supabase RPC 함수 호출 (SELECT용 anon 키 사용)
+            from src.shared.database import get_supabase_client
+
+            client = get_supabase_client(use_service_role=False)
 
             # RPC 함수 파라미터 구성
             rpc_params = {
@@ -206,6 +208,10 @@ class SupabaseVectorDB(VectorDBInterface):
         try:
             client = self._get_client()
 
+            # 배치 upsert를 위한 레코드 준비
+            records_with_url = []
+            records_without_url = []
+
             for doc, embedding in zip(documents, embeddings):
                 record = {
                     "title": doc.get("title"),
@@ -216,13 +222,22 @@ class SupabaseVectorDB(VectorDBInterface):
                     "published_at": doc.get("published_at"),
                 }
 
-                # URL 기준으로 upsert
+                # URL 유무로 분리
                 if doc.get("url"):
-                    client.table("news_signals").upsert(
-                        record, on_conflict="url"
-                    ).execute()
+                    records_with_url.append(record)
                 else:
-                    client.table("news_signals").insert(record).execute()
+                    records_without_url.append(record)
+
+            # 배치 upsert/insert 실행
+            if records_with_url:
+                client.table("news_signals").upsert(
+                    records_with_url, on_conflict="url"
+                ).execute()
+                logger.debug(f"URL 있는 문서 upsert: {len(records_with_url)}개")
+
+            if records_without_url:
+                client.table("news_signals").insert(records_without_url).execute()
+                logger.debug(f"URL 없는 문서 insert: {len(records_without_url)}개")
 
             logger.info(f"Vector upsert 완료: {len(documents)} documents")
             return True

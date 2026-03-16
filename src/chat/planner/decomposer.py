@@ -199,7 +199,7 @@ class QueryDecomposer:
         """
         self.extractor = EntityExtractor(ai_client=ai_client)
 
-    def decompose(
+    async def decompose(
         self,
         query: str,
         intents: list[QueryIntent],
@@ -216,7 +216,7 @@ class QueryDecomposer:
             list[SubQuery]: 분해된 하위 질문들
         """
         if entities is None:
-            entities = self.extractor.extract(query)
+            entities = await self.extractor.extract(query)
 
         sub_queries: list[SubQuery] = []
 

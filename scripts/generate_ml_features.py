@@ -379,11 +379,13 @@ async def main():
         action="store_true",
         help="실제 INSERT 없이 미리보기만",
     )
+    parser.add_argument(
+        "--incremental",
+        action="store_true",
+        help="가장 최근 업데이트된 피처의 날짜 이후부터만 갱신 (Incremental Update)",
+    )
 
     args = parser.parse_args()
-
-    start_date = datetime.strptime(args.start_date, "%Y-%m-%d").date()
-    end_date = datetime.strptime(args.end_date, "%Y-%m-%d").date()
 
     # Supabase 클라이언트
     supabase = get_supabase_client()
@@ -408,6 +410,39 @@ async def main():
     # 각 지역별로 Feature 생성
     for region in regions:
         try:
+            # Incremental 로직 처리
+            if args.incremental:
+                logger.info(f"{region}의 최근 피처 생성 날짜를 조회합니다...")
+                try:
+                    latest_response = (
+                        supabase.table("ml_training_features")
+                        .select("period_date")
+                        .eq("region", region)
+                        .eq("period_type", args.period_type)
+                        .order("period_date", desc=True)
+                        .limit(1)
+                        .execute()
+                    )
+                    if latest_response.data and latest_response.data[0].get("period_date"):
+                        # 가장 최신 날짜부터 갱신 시작 (겹치게 해서 갱신해도 upsert이므로 문제없음)
+                        latest_date_str = latest_response.data[0]["period_date"]
+                        start_date = datetime.strptime(latest_date_str, "%Y-%m-%d").date()
+                        logger.info(f"Incremental Update: {region}의 최근 생성일은 {start_date} 입니다.")
+                    else:
+                        logger.info(f"Incremental Update: 기존 피처가 없어 기본 시작일({args.start_date})을 사용합니다.")
+                        start_date = datetime.strptime(args.start_date, "%Y-%m-%d").date()
+                except Exception as db_err:
+                    logger.warning(f"최근 피처 날짜 조회 중 오류 발생 (schema 반영 여부 확인 필요): {db_err}")
+                    start_date = datetime.strptime(args.start_date, "%Y-%m-%d").date()
+            else:
+                start_date = datetime.strptime(args.start_date, "%Y-%m-%d").date()
+
+            end_date = datetime.strptime(args.end_date, "%Y-%m-%d").date()
+
+            if start_date > end_date:
+                logger.info(f"✓ {region}은 이미 구하고자 하는 기간({end_date})까지 최신 상태입니다.")
+                continue
+
             features = await generator.generate_features(
                 region=region,
                 period_type=args.period_type,
