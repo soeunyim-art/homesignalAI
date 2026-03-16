@@ -2,7 +2,7 @@ import os
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,9 +22,10 @@ class Settings(BaseSettings):
     )
 
     # Supabase
-    # Vercel 환경에서 환경변수 로딩 전 초기화 방지를 위해 기본값 제공
-    supabase_url: str = "https://placeholder.supabase.co"
-    supabase_key: str = "placeholder-key"  # anon/public key (SELECT용)
+    # CRITICAL: Optional로 설정하여 Pydantic이 빈 dict 받아도 에러 안 나게 함
+    # model_validator에서 None이면 기본값 설정
+    supabase_url: str | None = None
+    supabase_key: str | None = None
     supabase_service_role_key: str | None = None  # service_role key (INSERT/UPDATE용)
     supabase_timeout: int = 10  # Supabase 쿼리 타임아웃 (초)
     # PostgreSQL 직접 연결 (선택, 데이터 적재/마이그레이션용)
@@ -53,21 +54,53 @@ class Settings(BaseSettings):
             return [x.strip() for x in v.split(",") if x.strip()]
         return v or []
 
-    @field_validator("supabase_url")
-    @classmethod
-    def validate_supabase_url(cls, v):
-        """Supabase URL 검증 및 경고 (Startup 무중단)"""
-        if v == "https://placeholder.supabase.co":
-            import os
-            if os.environ.get("APP_ENV") == "production":
-                # Vercel 부팅 자체를 막지 않기 위해 에러 대신 로그만 남김
-                import logging
-                logger = logging.getLogger(__name__)
+    @model_validator(mode='after')
+    def set_required_defaults(self):
+        """
+        CRITICAL: Pydantic이 빈 dict를 받아도 기본값 설정.
+
+        Vercel 환경에서 .env 파일이 없으면 Pydantic은 빈 dict {}를 source로 받아
+        Optional 필드를 None으로 설정합니다. 이 validator에서 None을 감지하고
+        안전한 기본값으로 설정하여 애플리케이션 크래시를 방지합니다.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Supabase URL
+        if not self.supabase_url:
+            self.supabase_url = "https://placeholder.supabase.co"
+            logger.warning(
+                "SUPABASE_URL 환경변수가 설정되지 않아 placeholder로 초기화됨. "
+                "Mock mode로 작동합니다."
+            )
+
+        # Supabase Key
+        if not self.supabase_key:
+            self.supabase_key = "placeholder-key"
+            logger.warning(
+                "SUPABASE_KEY 환경변수가 설정되지 않아 placeholder로 초기화됨. "
+                "Mock mode로 작동합니다."
+            )
+
+        # Service Role Key
+        if not self.supabase_service_role_key:
+            self.supabase_service_role_key = "placeholder-service-key"
+            logger.debug("SUPABASE_SERVICE_ROLE_KEY가 설정되지 않아 placeholder로 초기화됨.")
+
+        # Production 환경에서 placeholder 사용 경고
+        if self.app_env == "production":
+            if "placeholder" in self.supabase_url:
                 logger.critical(
-                    "CRITICAL: Production 환경에서 placeholder Supabase URL이 사용되었습니다. "
-                    "Vercel 환경변수에서 'SUPABASE_URL'이 누락되었는지 확인하세요."
+                    "🚨 CRITICAL: Production 환경에서 placeholder Supabase URL 사용 중! "
+                    "Vercel Dashboard → Environment Variables에서 설정하세요."
                 )
-        return v
+            if self.supabase_key == "placeholder-key":
+                logger.critical(
+                    "🚨 CRITICAL: Production 환경에서 placeholder Supabase KEY 사용 중! "
+                    "Vercel Dashboard → Environment Variables에서 설정하세요."
+                )
+
+        return self
 
     # 캐시 TTL (초)
     cache_ttl_forecast: int = 3600  # 1시간
@@ -131,31 +164,59 @@ class Settings(BaseSettings):
         return self.app_env == "production"
 
 
+# Global singleton instance (lazy initialized)
+_settings: Settings | None = None
+
+
 @lru_cache
 def get_settings() -> Settings:
     """
-    Settings 싱글톤 인스턴스를 반환합니다.
+    Settings 싱글톤 인스턴스를 반환합니다 (Lazy Initialization).
+
+    CRITICAL: 모듈 임포트 시점이 아닌 첫 호출 시점에 초기화됩니다.
+    이는 Vercel 환경에서 환경변수 로딩 타이밍 이슈를 방지합니다.
 
     Note: Vercel 환경에서는 환경변수가 런타임에 로드되므로,
-    모듈 임포트 시점에 환경변수가 없어도 기본값으로 초기화됩니다.
-    실제 환경변수는 첫 호출 시 자동으로 로드됩니다.
+    api/index.py에서 환경변수를 설정한 후 이 함수를 호출해야 합니다.
     """
+    global _settings
+
+    if _settings is not None:
+        return _settings
+
     try:
-        return Settings()
+        _settings = Settings()
+        return _settings
     except Exception as e:
         # Vercel 초기 로딩 시 환경변수 없어도 크래시 방지
         import logging
-        logging.warning(
-            f"Settings 초기화 경고: {e}. 기본값으로 초기화합니다. "
-            "Vercel 환경변수가 설정되지 않았을 수 있습니다."
+        logging.critical(
+            f"CRITICAL: Settings 초기화 실패: {e}. "
+            f"환경변수 확인: SUPABASE_URL={os.getenv('SUPABASE_URL', 'NOT SET')}, "
+            f"SUPABASE_KEY={'SET' if os.getenv('SUPABASE_KEY') else 'NOT SET'}. "
+            "기본값으로 강제 초기화합니다."
         )
         # 환경변수 강제 설정하여 재시도
         os.environ.setdefault("SUPABASE_URL", "https://placeholder.supabase.co")
         os.environ.setdefault("SUPABASE_KEY", "placeholder-key")
-        return Settings()
+        os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "placeholder-service-key")
+        _settings = Settings()
+        return _settings
 
 
-# Module-level에서 초기화 (하위 호환성 유지)
-# Vercel 환경에서는 기본값(placeholder)으로 초기화되며,
-# 실제 환경변수는 런타임에 로드됩니다.
-settings = get_settings()
+# IMPORTANT: 모듈 레벨에서 초기화하지 않음!
+# 하위 호환성을 위해 __getattr__로 lazy loading 지원
+def __getattr__(name: str):
+    """
+    모듈 레벨 lazy attribute access.
+
+    'settings' 접근 시 자동으로 get_settings() 호출하여
+    하위 호환성 유지 + lazy initialization 달성.
+    """
+    if name == "settings":
+        return get_settings()
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
+
+
+# 실제 사용 시: from src.config import settings (자동으로 get_settings() 호출됨)
+# 또는: from src.config.settings import get_settings; settings = get_settings()

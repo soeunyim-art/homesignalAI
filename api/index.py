@@ -6,8 +6,29 @@ It imports the FastAPI app from src/main.py and exports it for Vercel.
 
 Official Vercel FastAPI guide:
 https://vercel.com/docs/frameworks/fastapi
+
+CRITICAL SECTION: Environment Variables Setup
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Environment variables MUST be set BEFORE any imports that trigger Settings initialization.
+This prevents Pydantic ValidationError during module loading.
 """
+
+# ═══════════════════════════════════════════════════════════════
+# STEP 1: Environment Variables (HIGHEST PRIORITY - BEFORE ALL IMPORTS!)
+# ═══════════════════════════════════════════════════════════════
 import os
+
+# Set fallback defaults BEFORE any other imports
+# These values are used ONLY if Vercel environment variables are not set
+os.environ.setdefault("SUPABASE_URL", "https://placeholder.supabase.co")
+os.environ.setdefault("SUPABASE_KEY", "placeholder-key")
+os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "placeholder-service-key")
+os.environ.setdefault("APP_ENV", "production")
+os.environ.setdefault("DEBUG", "false")
+
+# ═══════════════════════════════════════════════════════════════
+# STEP 2: Python Path Setup
+# ═══════════════════════════════════════════════════════════════
 import sys
 from pathlib import Path
 
@@ -16,78 +37,119 @@ root = Path(__file__).parent.parent
 if str(root) not in sys.path:
     sys.path.insert(0, str(root))
 
-# 환경변수 기본값 설정 (MUST be set BEFORE importing app)
-# This prevents ValidationError during Settings initialization
-if not os.getenv("SUPABASE_URL"):
-    os.environ["SUPABASE_URL"] = "https://placeholder.supabase.co"
-if not os.getenv("SUPABASE_KEY"):
-    os.environ["SUPABASE_KEY"] = "placeholder-key"
-if not os.getenv("SUPABASE_SERVICE_ROLE_KEY"):
-    os.environ["SUPABASE_SERVICE_ROLE_KEY"] = "placeholder-service-key"
-if not os.getenv("APP_ENV"):
-    os.environ["APP_ENV"] = "production"
-
-# Debug logging for Vercel deployment
-print("[Vercel] Initializing HomeSignal AI FastAPI app...")
+# ═══════════════════════════════════════════════════════════════
+# STEP 3: Debug Logging
+# ═══════════════════════════════════════════════════════════════
+print("[Vercel] ═══════════════════════════════════════════════════════")
+print("[Vercel] HomeSignal AI FastAPI - Vercel Serverless Function")
+print("[Vercel] ═══════════════════════════════════════════════════════")
 print(f"[Vercel] Python version: {sys.version}")
-print(f"[Vercel] Environment check:")
-print(f"  - SUPABASE_URL: {'✓' if os.getenv('SUPABASE_URL') else '✗'}")
-print(f"  - SUPABASE_KEY: {'✓' if os.getenv('SUPABASE_KEY') else '✗'}")
-print(f"  - APP_ENV: {os.getenv('APP_ENV', 'not set')}")
+print(f"[Vercel] Project root: {root}")
+print("[Vercel]")
+print("[Vercel] Environment Variables Check:")
+print(f"  - SUPABASE_URL: {'✓ SET' if os.getenv('SUPABASE_URL') else '✗ MISSING'}")
+print(f"  - SUPABASE_KEY: {'✓ SET' if os.getenv('SUPABASE_KEY') else '✗ MISSING'}")
+print(f"  - SUPABASE_SERVICE_ROLE_KEY: {'✓ SET' if os.getenv('SUPABASE_SERVICE_ROLE_KEY') else '✗ MISSING'}")
+print(f"  - OPENAI_API_KEY: {'✓ SET' if os.getenv('OPENAI_API_KEY') else '✗ MISSING'}")
+print(f"  - APP_ENV: {os.getenv('APP_ENV', 'NOT SET')}")
+print(f"  - DEBUG: {os.getenv('DEBUG', 'NOT SET')}")
+print("[Vercel]")
+
+# ═══════════════════════════════════════════════════════════════
+# STEP 4: Import FastAPI App (Safe now that env vars are set)
+# ═══════════════════════════════════════════════════════════════
 
 try:
-    # Import the FastAPI app instance from src.main
-    # This MUST succeed for Vercel to recognize the entrypoint
+    print("[Vercel] Loading FastAPI app from src.main...")
     from src.main import app
 
-    print("[Vercel] ✓ FastAPI app loaded successfully from src.main")
-    print(f"[Vercel] ✓ App title: {app.title}")
+    print("[Vercel] ✅ SUCCESS: FastAPI app loaded")
+    print(f"[Vercel]   - App title: {app.title}")
+    print(f"[Vercel]   - App version: {getattr(app, 'version', 'N/A')}")
+    print("[Vercel]")
 
 except Exception as e:
-    print(f"[Vercel] ✗ CRITICAL ERROR: Failed to load app from src.main")
-    print(f"[Vercel] ✗ Error: {e}")
+    print("[Vercel] ═══════════════════════════════════════════════════════")
+    print("[Vercel] ❌ CRITICAL ERROR: Failed to load FastAPI app")
+    print("[Vercel] ═══════════════════════════════════════════════════════")
+    print(f"[Vercel] Error type: {type(e).__name__}")
+    print(f"[Vercel] Error message: {e}")
+    print("[Vercel]")
+    print("[Vercel] Stack trace:")
     import traceback
     traceback.print_exc()
+    print("[Vercel] ═══════════════════════════════════════════════════════")
 
+    # ═══════════════════════════════════════════════════════════════
     # Fallback: Create minimal emergency app
-    print("[Vercel] Creating fallback emergency app...")
+    # ═══════════════════════════════════════════════════════════════
+    print("[Vercel] Creating emergency fallback app...")
     from fastapi import FastAPI
     from fastapi.responses import JSONResponse
 
     app = FastAPI(
-        title="HomeSignal AI (Emergency Fallback)",
-        description="App failed to load - check logs"
+        title="HomeSignal AI (Emergency Mode)",
+        description="Main app failed to initialize - running in emergency mode",
+        version="0.0.0-emergency"
     )
+
+    # Store error for debugging
+    _init_error = str(e)
+    _init_traceback = traceback.format_exc()
 
     @app.get("/")
     @app.get("/health")
     async def emergency_health():
-        """Emergency health check when main app fails to load"""
+        """Emergency health check - app initialization failed"""
         return JSONResponse(
             status_code=503,
             content={
-                "status": "error",
-                "message": "Application failed to initialize - check Vercel logs",
-                "error": str(e),
-                "troubleshooting": {
-                    "check_env_vars": "Verify SUPABASE_URL, SUPABASE_KEY in Vercel dashboard",
-                    "check_dependencies": "Ensure all requirements.txt packages installed",
-                    "check_logs": "View detailed logs in Vercel deployment panel"
+                "status": "emergency_mode",
+                "message": "🚨 Application failed to initialize - check Vercel deployment logs",
+                "error": {
+                    "type": type(e).__name__,
+                    "message": _init_error,
                 },
-                "env_check": {
-                    "SUPABASE_URL": "✓" if os.getenv("SUPABASE_URL") else "✗ MISSING",
-                    "SUPABASE_KEY": "✓" if os.getenv("SUPABASE_KEY") else "✗ MISSING",
+                "environment": {
+                    "SUPABASE_URL": "✓ SET" if os.getenv("SUPABASE_URL") else "✗ MISSING",
+                    "SUPABASE_KEY": "✓ SET" if os.getenv("SUPABASE_KEY") else "✗ MISSING",
+                    "OPENAI_API_KEY": "✓ SET" if os.getenv("OPENAI_API_KEY") else "✗ MISSING",
                     "APP_ENV": os.getenv("APP_ENV", "NOT SET"),
-                }
+                },
+                "troubleshooting": {
+                    "step_1": "Check Vercel Dashboard → Environment Variables",
+                    "step_2": "Verify SUPABASE_URL, SUPABASE_KEY, OPENAI_API_KEY are set",
+                    "step_3": "Check Build Logs in Vercel deployment panel",
+                    "step_4": "Review stack trace above for specific error details",
+                },
+                "documentation": "See VERCEL_DEPLOYMENT_FIX.md for complete guide"
             }
         )
 
-    print("[Vercel] ✓ Fallback app created")
+    @app.get("/error/trace")
+    async def error_trace():
+        """Full error traceback for debugging"""
+        return JSONResponse(
+            content={
+                "error": _init_error,
+                "traceback": _init_traceback
+            }
+        )
 
-# This is the CRITICAL line for Vercel to find the app
-# The module MUST have 'app' as a top-level variable
-print(f"[Vercel] Exporting app object: {type(app)}")
-print(f"[Vercel] App is callable: {callable(app)}")
+    print("[Vercel] ✅ Emergency app created successfully")
+    print("[Vercel]   - Health endpoint: /health")
+    print("[Vercel]   - Error trace: /error/trace")
+    print("[Vercel]")
 
-# Explicit export for Python's import system
+# ═══════════════════════════════════════════════════════════════
+# Export for Vercel
+# ═══════════════════════════════════════════════════════════════
+print("[Vercel] Finalizing...")
+print(f"[Vercel]   - App type: {type(app)}")
+print(f"[Vercel]   - App callable: {callable(app)}")
+print("[Vercel] ═══════════════════════════════════════════════════════")
+print("[Vercel] ✅ Vercel serverless function ready")
+print("[Vercel] ═══════════════════════════════════════════════════════")
+
+# CRITICAL: Module must export 'app' for Vercel
 __all__ = ["app"]
