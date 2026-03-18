@@ -86,3 +86,7 @@ export function WireframeText({
     </div>
   );
 }
+
+export function WireframeDivider({ className }: { className?: string }) {
+  return <div className={cn("w-full h-px bg-muted-foreground/20 my-2", className)} />;
+}
