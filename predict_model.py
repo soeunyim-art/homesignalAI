@@ -141,8 +141,8 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
         g["month_sin"] = np.sin(2 * np.pi * g["ym"].dt.month / 12)
         g["month_cos"] = np.cos(2 * np.pi * g["ym"].dt.month / 12)
 
-        # 타겟: 1~3개월 후 매매가 변화율 (%)  ← 절대가 대신 변화율로 예측 (동별 가격 차이 제거)
-        for h in [1, 2, 3]:
+        # 타겟: 1·3·6개월 후 매매가 변화율 (%)  ← 절대가 대신 변화율로 예측 (동별 가격 차이 제거)
+        for h in HORIZONS:
             future = g["avg_price_10k"].shift(-h)
             g[f"target_{h}m"] = (future - g["avg_price_10k"]) / g["avg_price_10k"] * 100
 
@@ -193,6 +193,38 @@ NUMERIC_FEATURES = [
 
 # 범주형 피처 (동 → OneHot)
 CATEGORICAL_FEATURES = ["dong"]
+
+# ── 동 → 구 매핑 (구 단위 집계 모델용) ──────────────────────────────
+DONG_GU_MAP: dict[str, str] = {
+    # 동대문구
+    "회기동": "동대문구", "이문동": "동대문구", "용두동": "동대문구",
+    "제기동": "동대문구", "전농동": "동대문구", "답십리동": "동대문구",
+    "장안동": "동대문구", "청량리동": "동대문구", "신설동": "동대문구", "휘경동": "동대문구",
+    # 성북구
+    "길음동": "성북구", "동소문동": "성북구", "돈암동": "성북구",
+    "안암동": "성북구", "보문동": "성북구", "정릉동": "성북구",
+    "석관동": "성북구", "장위동": "성북구", "월곡동": "성북구", "종암동": "성북구",
+    # 중랑구
+    "면목동": "중랑구", "상봉동": "중랑구", "중화동": "중랑구",
+    "묵동": "중랑구", "망우동": "중랑구", "신내동": "중랑구",
+    # 강북구
+    "번동": "강북구", "수유동": "강북구", "미아동": "강북구", "우이동": "강북구",
+    # 도봉구
+    "방학동": "도봉구", "창동": "도봉구", "도봉동": "도봉구", "쌍문동": "도봉구",
+}
+
+GU_NUMERIC_FEATURES = [
+    "avg_jeonse_10k", "avg_jeonse_per_sqm",
+    "rate_base",
+    "trade_count",    "jeonse_count",
+    "price_lag1",     "price_lag2",     "price_lag3",
+    "jeonse_lag1",    "jeonse_lag2",    "jeonse_lag3",
+    "rbase_lag1",     "rbase_lag2",     "rbase_lag3",
+    "price_mom",      "jeonse_mom",     "rate_change",
+    "price_yoy",      "jeonse_yoy",
+    "jeonse_ratio",   "month_sin",      "month_cos",
+]
+GU_CATEGORICAL_FEATURES = ["gu"]
 
 # 아파트 헤도닉 모델 피처
 # - 아파트 고유 특성: area, floor, age
@@ -304,7 +336,9 @@ def _make_pipeline() -> Pipeline:
 
 def train_model(df: pd.DataFrame, horizon: int):
     target = f"target_{horizon}m"
-    needed = NUMERIC_FEATURES + CATEGORICAL_FEATURES + [target, "ym"]
+    needed = list(dict.fromkeys(
+        NUMERIC_FEATURES + CATEGORICAL_FEATURES + [target, "ym", "trade_count"]
+    ))
     sub    = df[needed].dropna().sort_values("ym").reset_index(drop=True)
 
     X   = sub[NUMERIC_FEATURES + CATEGORICAL_FEATURES]
@@ -338,7 +372,7 @@ def train_model(df: pd.DataFrame, horizon: int):
     print(f"    MAE (test): {mae_val:.2f}%")
     print(f"    R²  (test): {r2_val:.3f}")
 
-    return pipe, X, y
+    return pipe, X, y, mae_val, r2_val
 
 
 def _get_feature_names(pipe: Pipeline) -> list[str]:
@@ -395,8 +429,9 @@ def plot_importance(pipe: Pipeline, horizon: int) -> pd.Series:
     return real
 
 
-# 예측 변화율 클리핑 상한 (부동산 현실적 한계)
-CLIP_BOUNDS = {1: 10.0, 2: 15.0, 3: 20.0}
+# 예측 구간 및 클리핑 상한
+HORIZONS    = [1, 3, 6]
+CLIP_BOUNDS = {1: 10.0, 3: 15.0, 6: 25.0}
 
 
 def calc_confidence(trade_count: float) -> int:
@@ -439,7 +474,7 @@ def predict_next(df: pd.DataFrame, pipes: dict) -> pd.DataFrame:
             "신뢰도":      confidence,
         }
         pcts = {}
-        for h in [1, 2, 3]:
+        for h in HORIZONS:
             try:
                 pred_pct = float(pipes[h].predict(X_pred)[0])
                 # 클리핑: 비현실적 극단값 제거
@@ -558,7 +593,7 @@ def predict_apt_level(dong_pct: dict) -> pd.DataFrame:
             "기준월":      row["base_ym"],
             "현재가(만원)": cur,
         }
-        for h in [1, 2, 3]:
+        for h in HORIZONS:
             pct = pcts.get(h)
             if pct is not None:
                 pred = int(cur * (1 + pct / 100))
@@ -719,7 +754,7 @@ def predict_apt_hedonic(
             "현재가(만원)": cur,
         }
 
-        for h in [1, 2, 3]:
+        for h in HORIZONS:
             future_month = (base_month + h - 1) % 12 + 1
             future_year  = base_year + (base_month + h - 1) // 12
 
@@ -786,11 +821,11 @@ def save_apt_predictions_to_supabase(apt_df: pd.DataFrame):
             "base_ym":           row["기준월"],
             "current_price_10k": to_int(row["현재가(만원)"]),
             "pred_1m_10k":       to_int(row["1개월후_예측(만원)"]),
-            "pred_2m_10k":       to_int(row["2개월후_예측(만원)"]),
             "pred_3m_10k":       to_int(row["3개월후_예측(만원)"]),
+            "pred_6m_10k":       to_int(row["6개월후_예측(만원)"]),
             "change_1m_pct":     to_float(row["1개월후_변동(%)"]),
-            "change_2m_pct":     to_float(row["2개월후_변동(%)"]),
             "change_3m_pct":     to_float(row["3개월후_변동(%)"]),
+            "change_6m_pct":     to_float(row["6개월후_변동(%)"]),
         })
 
     url     = f"{SUPABASE_URL}/rest/v1/predictions_apt"
@@ -808,6 +843,137 @@ def save_apt_predictions_to_supabase(apt_df: pd.DataFrame):
         print(f"  → Supabase predictions_apt 저장 완료 ({len(rows)}개 아파트)")
     else:
         print(f"  [ERROR] predictions_apt 저장 실패 {resp.status_code}: {resp.text[:200]}")
+
+
+# ─────────────────────────────────────────
+# 구 단위 집계 모델
+# ─────────────────────────────────────────
+def build_gu_features(df: pd.DataFrame) -> pd.DataFrame:
+    """동별 데이터를 구 단위로 집계하고 시계열 lag / 변화율 피처 생성"""
+    d = df.copy()
+    d["gu"] = d["dong"].map(DONG_GU_MAP)
+    d = d.dropna(subset=["gu"])
+
+    # 구·월별 집계 (거래량 가중 평균)
+    def wavg(vals, weights):
+        w = weights.clip(lower=1)
+        return float(np.average(vals, weights=w)) if w.sum() > 0 else float(vals.mean())
+
+    records = []
+    for (gu, ym), g in d.groupby(["gu", "ym"]):
+        records.append({
+            "gu":                 gu,
+            "ym":                 ym,
+            "avg_price_10k":      wavg(g["avg_price_10k"],      g["trade_count"]),
+            "avg_jeonse_10k":     wavg(g["avg_jeonse_10k"],     g["jeonse_count"].clip(lower=1)),
+            "avg_jeonse_per_sqm": g["avg_jeonse_per_sqm"].mean(),
+            "trade_count":        g["trade_count"].sum(),
+            "jeonse_count":       g["jeonse_count"].sum(),
+            "rate_base":          g["rate_base"].mean(),
+        })
+    gu_df = pd.DataFrame(records).sort_values(["gu", "ym"]).reset_index(drop=True)
+
+    # gu별 lag·변화율·타겟 생성
+    dfs = []
+    for _, g in gu_df.groupby("gu"):
+        g = g.sort_values("ym").copy()
+        for lag in [1, 2, 3]:
+            g[f"price_lag{lag}"]  = g["avg_price_10k"].shift(lag)
+            g[f"jeonse_lag{lag}"] = g["avg_jeonse_10k"].shift(lag)
+            g[f"rbase_lag{lag}"]  = g["rate_base"].shift(lag)
+        g["price_mom"]    = g["avg_price_10k"].pct_change() * 100
+        g["jeonse_mom"]   = g["avg_jeonse_10k"].pct_change() * 100
+        g["rate_change"]  = g["rate_base"].diff()
+        g["price_yoy"]    = g["avg_price_10k"].pct_change(12) * 100
+        g["jeonse_yoy"]   = g["avg_jeonse_10k"].pct_change(12) * 100
+        g["jeonse_ratio"] = g["avg_jeonse_10k"] / g["avg_price_10k"].replace(0, np.nan)
+        g["month_sin"]    = np.sin(2 * np.pi * g["ym"].dt.month / 12)
+        g["month_cos"]    = np.cos(2 * np.pi * g["ym"].dt.month / 12)
+        for h in HORIZONS:
+            future = g["avg_price_10k"].shift(-h)
+            g[f"target_{h}m"] = (future - g["avg_price_10k"]) / g["avg_price_10k"] * 100
+        dfs.append(g)
+
+    result = pd.concat(dfs, ignore_index=True).replace([np.inf, -np.inf], np.nan)
+    print(f"  구 단위 집계: {result['gu'].nunique()}개 구, {len(result):,}행")
+    return result
+
+
+def _make_gu_pipeline() -> Pipeline:
+    preprocessor = ColumnTransformer([
+        ("num", StandardScaler(), GU_NUMERIC_FEATURES),
+        ("cat", OneHotEncoder(drop="first", sparse_output=False,
+                              handle_unknown="ignore"), GU_CATEGORICAL_FEATURES),
+    ])
+    return Pipeline([
+        ("pre",   preprocessor),
+        ("model", RidgeCV(alphas=[0.01, 0.1, 1, 5, 10, 50, 100, 500, 1000])),
+    ])
+
+
+def train_gu_model(gu_df: pd.DataFrame, horizon: int):
+    target = f"target_{horizon}m"
+    needed = GU_NUMERIC_FEATURES + GU_CATEGORICAL_FEATURES + [target, "ym"]
+    sub    = gu_df[needed].dropna().sort_values("ym").reset_index(drop=True)
+
+    X = sub[GU_NUMERIC_FEATURES + GU_CATEGORICAL_FEATURES]
+    y = sub[target]
+
+    split       = int(len(sub) * 0.7)
+    X_train     = X.iloc[:split];  X_test  = X.iloc[split:]
+    y_train     = y.iloc[:split];  y_test  = y.iloc[split:]
+    train_start = sub["ym"].iloc[0].strftime("%Y-%m")
+    train_end   = sub["ym"].iloc[split - 1].strftime("%Y-%m")
+    test_start  = sub["ym"].iloc[split].strftime("%Y-%m")
+    test_end    = sub["ym"].iloc[-1].strftime("%Y-%m")
+
+    eval_pipe = _make_gu_pipeline()
+    eval_pipe.fit(X_train, y_train)
+    y_pred  = eval_pipe.predict(X_test)
+    mae_val = mean_absolute_error(y_test, y_pred)
+    r2_val  = r2_score(y_test, y_pred)
+
+    pipe = _make_gu_pipeline()
+    pipe.fit(X, y)
+
+    print(f"\n  [구 단위 {horizon}개월 후 예측]")
+    print(f"    학습: {train_start} ~ {train_end} ({split}행)  "
+          f"평가: {test_start} ~ {test_end} ({len(X_test)}행)")
+    print(f"    최적 alpha: {pipe.named_steps['model'].alpha_}")
+    print(f"    MAE (test): {mae_val:.2f}%")
+    print(f"    R²  (test): {r2_val:.3f}")
+
+    return pipe, mae_val, r2_val
+
+
+def save_metrics(dong_metrics: dict, gu_metrics: dict):
+    """모델 성능 지표를 metrics.json으로 저장"""
+    import json
+    from datetime import date
+
+    out = {
+        "run_date": date.today().strftime("%Y-%m-%d"),
+        "note": "MAE: 예측 변화율의 평균절대오차(%), R²: 분산 설명력(1=완벽, 0=무의미)",
+        "dong_level": {
+            f"ridge_{h}m": {
+                "r2":      round(dong_metrics[h]["r2"],  3),
+                "mae_pct": round(dong_metrics[h]["mae"], 2),
+                "note":    "동 단위, 노이즈 필터링(trade>=5, |target|<=15%) 적용",
+            }
+            for h in HORIZONS
+        },
+        "gu_level": {
+            f"ridge_{h}m": {
+                "r2":      round(gu_metrics[h]["r2"],  3),
+                "mae_pct": round(gu_metrics[h]["mae"], 2),
+                "note":    "구 단위 거래량 가중 집계, 노이즈 적음",
+            }
+            for h in HORIZONS
+        },
+    }
+    with open("metrics.json", "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False, indent=2)
+    print("  → metrics.json 저장")
 
 
 def save_predictions_to_supabase(pred_df: pd.DataFrame):
@@ -836,11 +1002,11 @@ def save_predictions_to_supabase(pred_df: pd.DataFrame):
             "base_ym":            row["기준월"],
             "current_price_10k":  to_int(row["현재가(만원)"]),
             "pred_1m_10k":        to_int(row["1개월후_예측(만원)"]),
-            "pred_2m_10k":        to_int(row["2개월후_예측(만원)"]),
             "pred_3m_10k":        to_int(row["3개월후_예측(만원)"]),
+            "pred_6m_10k":        to_int(row["6개월후_예측(만원)"]),
             "change_1m_pct":      to_float(row["1개월후_변동(%)"]),
-            "change_2m_pct":      to_float(row["2개월후_변동(%)"]),
             "change_3m_pct":      to_float(row["3개월후_변동(%)"]),
+            "change_6m_pct":      to_float(row["6개월후_변동(%)"]),
             "confidence_score":   to_int(row.get("신뢰도", 50)),
         })
 
@@ -913,16 +1079,40 @@ def main():
     # Step 1: 상관관계 분석
     target_corr = correlation_analysis(df)
 
-    # Step 2: 모델 학습
-    print("\n[Step 2] Ridge 회귀 모델 학습 (1 / 2 / 3개월 후 예측)")
+    # Step 2: 동 단위 Ridge 모델 학습
+    print("\n[Step 2] 동 단위 Ridge 회귀 모델 학습 (노이즈 필터링 적용)")
     pipes = {}
-    for h in [1, 2, 3]:
-        pipe, X, y = train_model(df, h)
+    dong_metrics = {}
+    for h in HORIZONS:
+        pipe, X, y, mae_val, r2_val = train_model(df, h)
         plot_importance(pipe, h)
         pipes[h] = pipe
+        dong_metrics[h] = {"mae": mae_val, "r2": r2_val}
 
     # Actual vs Predicted 차트
     plot_actual_vs_pred(df, pipes)
+
+    # Step 2b: 구 단위 Ridge 모델 학습
+    print("\n[Step 2b] 구 단위 Ridge 회귀 모델 학습 (거래량 가중 집계)")
+    gu_df = build_gu_features(df)
+    gu_pipes = {}
+    gu_metrics = {}
+    for h in HORIZONS:
+        gu_pipe, mae_val, r2_val = train_gu_model(gu_df, h)
+        gu_pipes[h] = gu_pipe
+        gu_metrics[h] = {"mae": mae_val, "r2": r2_val}
+
+    # 성능 비교 요약
+    print("\n  ── 모델 성능 비교 ──────────────────────────────────")
+    print(f"  {'구간':<10} {'동 단위 R²':>10} {'동 단위 MAE':>12} {'구 단위 R²':>10} {'구 단위 MAE':>12}")
+    print("  " + "-" * 58)
+    for h in HORIZONS:
+        print(f"  {h}개월 후   "
+              f"  {dong_metrics[h]['r2']:>8.3f}   {dong_metrics[h]['mae']:>9.2f}%"
+              f"  {gu_metrics[h]['r2']:>8.3f}   {gu_metrics[h]['mae']:>9.2f}%")
+
+    # metrics.json 저장
+    save_metrics(dong_metrics, gu_metrics)
 
     # Step 3: 동별 향후 예측
     pred_df = predict_next(df, pipes)
@@ -938,12 +1128,13 @@ def main():
 
     print("\n" + "=" * 55)
     print("완료!  생성된 파일:")
-    print("  price_trend.png         - 가격·금리 추이")
-    print("  correlation_heatmap.png - 상관관계 히트맵")
-    print("  importance_1m/2m/3m.png - 변수 중요도 차트")
-    print("  actual_vs_pred.png      - 예측 정확도 차트")
-    print("  prediction_result.csv   - 동별 1~3개월 예측 결과")
+    print("  price_trend.png           - 가격·금리 추이")
+    print("  correlation_heatmap.png   - 상관관계 히트맵")
+    print("  importance_1m/2m/3m.png   - 변수 중요도 차트")
+    print("  actual_vs_pred.png        - 예측 정확도 차트")
+    print("  prediction_result.csv     - 동별 1~3개월 예측 결과")
     print("  prediction_result_apt.csv - 아파트별 1~3개월 헤도닉 예측")
+    print("  metrics.json              - 동·구 단위 모델 R²/MAE 지표")
     print("=" * 55)
 
 
