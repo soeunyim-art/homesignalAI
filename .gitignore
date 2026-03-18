@@ -2,6 +2,7 @@
 homesignal.env
 .env
 *.env
+.env*.local
 
 # Python 캐시
 __pycache__/
@@ -37,3 +38,13 @@ HomeSignal_AI_Technical_Blueprint.pdf
 # 한국산업은행 원본 데이터
 한국산업은행_금리 현황_20260120.csv
 아파트 전월세 실거래가 자료 기술문서.hwp
+
+# v0 runtime files
+__v0_runtime_loader.js
+__v0_devtools.tsx
+__v0_jsx-dev-runtime.ts
+
+# Node.js
+node_modules/
+.next/
+.DS_Store
