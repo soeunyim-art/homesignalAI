@@ -1,6 +1,6 @@
 import os
 from functools import lru_cache
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -22,14 +22,14 @@ class Settings(BaseSettings):
     )
 
     # Supabase
-    # CRITICAL: Optional로 설정하여 Pydantic이 빈 dict 받아도 에러 안 나게 함
-    # model_validator에서 None이면 기본값 설정
+    # CRITICAL: Optional 필드와 기본값 None을 명시하여 환경 변수가 없어도 ValidationError가 발생하지 않게 함
     supabase_url: str | None = None
     supabase_key: str | None = None
-    supabase_service_role_key: str | None = None  # service_role key (INSERT/UPDATE용)
-    supabase_timeout: int = 10  # Supabase 쿼리 타임아웃 (초)
-    # PostgreSQL 직접 연결 (선택, 데이터 적재/마이그레이션용)
+    supabase_service_role_key: str | None = None  # service_role key
+    supabase_timeout: int = 10
+    # PostgreSQL 직접 연결
     database_url: str | None = None
+
 
     # AI API
     openai_api_key: str = ""
@@ -48,14 +48,14 @@ class Settings(BaseSettings):
 
     @field_validator("allowed_origins", mode="before")
     @classmethod
-    def parse_allowed_origins(cls, v):
+    def parse_allowed_origins(cls, v: Any) -> list[str]:
         """쉼표 구분 문자열을 리스트로 파싱"""
         if isinstance(v, str):
             return [x.strip() for x in v.split(",") if x.strip()]
         return v or []
 
-    @model_validator(mode='after')
-    def set_required_defaults(self):
+    @model_validator(mode="after")
+    def set_required_defaults(self) -> "Settings":
         """
         CRITICAL: Pydantic이 빈 dict를 받아도 기본값 설정.
 
@@ -64,6 +64,7 @@ class Settings(BaseSettings):
         안전한 기본값으로 설정하여 애플리케이션 크래시를 방지합니다.
         """
         import logging
+
         logger = logging.getLogger(__name__)
 
         # Supabase URL
@@ -85,7 +86,9 @@ class Settings(BaseSettings):
         # Service Role Key
         if not self.supabase_service_role_key:
             self.supabase_service_role_key = "placeholder-service-key"
-            logger.debug("SUPABASE_SERVICE_ROLE_KEY가 설정되지 않아 placeholder로 초기화됨.")
+            logger.debug(
+                "SUPABASE_SERVICE_ROLE_KEY가 설정되지 않아 placeholder로 초기화됨."
+            )
 
         # Production 환경에서 placeholder 사용 경고
         if self.app_env == "production":
@@ -190,6 +193,7 @@ def get_settings() -> Settings:
     except Exception as e:
         # Vercel 초기 로딩 시 환경변수 없어도 크래시 방지
         import logging
+
         logging.critical(
             f"CRITICAL: Settings 초기화 실패: {e}. "
             f"환경변수 확인: SUPABASE_URL={os.getenv('SUPABASE_URL', 'NOT SET')}, "
@@ -206,7 +210,7 @@ def get_settings() -> Settings:
 
 # IMPORTANT: 모듈 레벨에서 초기화하지 않음!
 # 하위 호환성을 위해 __getattr__로 lazy loading 지원
-def __getattr__(name: str):
+def __getattr__(name: str) -> Settings:
     """
     모듈 레벨 lazy attribute access.
 
