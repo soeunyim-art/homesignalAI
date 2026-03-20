@@ -9,6 +9,7 @@ import { Overview } from "@/components/dashboard/tabs/overview";
 import { RegionAnalysis } from "@/components/dashboard/tabs/region-analysis";
 import { PriceTrends } from "@/components/dashboard/tabs/price-trends";
 import { AIReport } from "@/components/dashboard/tabs/ai-report";
+import { AptSearch } from "@/components/dashboard/tabs/apt-search";
 import { AIChatbot } from "@/components/dashboard/ai-chatbot";
 import { DisclaimerFooter } from "@/components/dashboard/disclaimer-footer";
 
@@ -38,6 +39,8 @@ export default function DashboardPage() {
         return <RegionAnalysis searchQuery={searchQuery} />;
       case "price":
         return <PriceTrends searchQuery={searchQuery} />;
+      case "apt-search":
+        return <AptSearch searchQuery={searchQuery} />;
       case "report":
         return <AIReport searchQuery={searchQuery} />;
       default:

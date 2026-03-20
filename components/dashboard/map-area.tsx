@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { MapPin, TrendingUp, TrendingDown, AlertTriangle, Info, ChevronRight } from "lucide-react";
+import { MapPin, AlertTriangle, Info, ChevronRight } from "lucide-react";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -146,10 +146,6 @@ export function MapArea() {
                 </div>
                 <span className="text-base font-semibold text-foreground">{stat.gu}</span>
               </div>
-              <div className={`flex items-center gap-1 text-sm font-medium ${stat.change1m >= 0 ? "text-primary" : "text-destructive"}`}>
-                {stat.change1m >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
-                {stat.change1m > 0 ? "+" : ""}{stat.change1m.toFixed(1)}%
-              </div>
             </div>
 
             <div className="space-y-1 mb-3">
@@ -161,15 +157,6 @@ export function MapArea() {
               </p>
             </div>
 
-            <div className="flex items-center justify-between pt-3 border-t border-border/50">
-              <p className="text-xs text-muted-foreground">
-                1개월 예측:{" "}
-                <span className={stat.change1m >= 0 ? "text-primary font-medium" : "text-destructive font-medium"}>
-                  {stat.change1m > 0 ? "+" : ""}{stat.change1m.toFixed(2)}%
-                </span>
-              </p>
-              <ConfidenceBadge score={stat.avgConfidence} />
-            </div>
 
             <div className="flex items-center justify-end mt-2 pt-2">
               <span className="text-xs text-muted-foreground flex items-center gap-1 hover:text-primary transition-colors">
