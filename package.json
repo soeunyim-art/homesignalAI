@@ -56,10 +56,16 @@
     "react-hook-form": "^7.54.1",
     "react-resizable-panels": "^2.1.7",
     "recharts": "2.15.0",
+    "sharp": "^0.33.5",
     "sonner": "^1.7.1",
     "tailwind-merge": "^3.3.1",
     "vaul": "^1.1.2",
     "zod": "^3.24.1"
+  },
+  "pnpm": {
+    "allowedBuildScripts": [
+      "sharp"
+    ]
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.0",
