@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, Info } from "lucide-react";
+import { AlertTriangle, Info, ChevronDown, ChevronUp } from "lucide-react";
+import {
+  ResponsiveContainer, LineChart, Line, XAxis, YAxis,
+  Tooltip, ReferenceLine, CartesianGrid,
+} from "recharts";
 
 const DONG_GU_MAP: Record<string, string> = {
   회기동: "동대문구", 이문동: "동대문구", 청량리동: "동대문구", 전농동: "동대문구",
@@ -55,6 +59,107 @@ function formatPrice(val: number) {
   const cheon = val % 10000;
   if (cheon === 0) return `${eok}억`;
   return `${eok}억 ${Math.round(cheon / 100) * 100}만`;
+}
+
+type ChartPoint = { ym: string; real_price?: number; pred_price?: number; trade_count?: number };
+
+function addMonths(ym: string, n: number) {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(y, m - 1 + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function DongChartTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload as ChartPoint;
+  const price = d.real_price ?? d.pred_price;
+  const isPred = d.pred_price != null && d.real_price == null;
+  return (
+    <div className="bg-popover border border-border rounded-lg p-3 text-xs shadow-lg">
+      <p className="font-semibold text-foreground mb-1">{label}</p>
+      <p className="text-muted-foreground">
+        {isPred ? "예측가" : "실거래 평균"}:{" "}
+        <span className="text-foreground font-medium">{formatPrice(price!)}</span>
+      </p>
+      {!isPred && d.trade_count != null && (
+        <p className="text-muted-foreground">거래량: {d.trade_count}건</p>
+      )}
+    </div>
+  );
+}
+
+function DongChart({ prediction: p }: { prediction: Prediction }) {
+  const [open, setOpen] = useState(false);
+  const [data, setData] = useState<ChartPoint[] | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function toggle() {
+    if (!open && data === null) {
+      setLoading(true);
+      try {
+        const res = await fetch(`/api/trade-history?dong=${encodeURIComponent(p.dong)}`);
+        const json = await res.json();
+        const raw: { ym: string; avg_price_10k: number; trade_count: number }[] = json.history ?? [];
+
+        const pointMap: Record<string, ChartPoint> = {};
+        for (const r of raw) {
+          pointMap[r.ym] = { ym: r.ym, real_price: r.avg_price_10k, trade_count: r.trade_count };
+        }
+        const realYms = raw.map((r) => r.ym).sort();
+        const lastRealYm = realYms[realYms.length - 1] ?? p.base_ym;
+        const maxPredYm = addMonths(lastRealYm, 7);
+        const predEntries: [string, number][] = ([
+          [p.base_ym, p.current_price_10k],
+          [addMonths(p.base_ym, 1), p.pred_1m_10k],
+          [addMonths(p.base_ym, 3), p.pred_3m_10k],
+          [addMonths(p.base_ym, 6), p.pred_6m_10k],
+        ] as [string, number][]).filter(([ym]) => ym <= maxPredYm);
+        for (const [ym, price] of predEntries) {
+          if (!pointMap[ym]) pointMap[ym] = { ym };
+          pointMap[ym].pred_price = price;
+        }
+        setData(Object.values(pointMap).sort((a, b) => a.ym.localeCompare(b.ym)));
+      } catch {
+        setData([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+    setOpen((v) => !v);
+  }
+
+  return (
+    <td colSpan={6} className="p-0">
+      <button
+        onClick={toggle}
+        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors px-4 py-2"
+      >
+        {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+        {open ? "차트 닫기" : "실거래가 추이 (2025.01~)"}
+      </button>
+      {open && (
+        <div className="h-48 px-4 pb-3">
+          {loading ? (
+            <p className="text-xs text-muted-foreground text-center pt-10">로딩 중...</p>
+          ) : !data?.length ? (
+            <p className="text-xs text-muted-foreground text-center pt-10">거래 데이터가 없습니다.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="ym" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} tickFormatter={(v) => v.slice(2)} />
+                <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} tickFormatter={(v) => `${Math.round(v / 10000)}억`} width={36} domain={["auto", "auto"]} />
+                <Tooltip content={<DongChartTooltip />} />
+                <ReferenceLine x={p.base_ym} stroke="hsl(var(--primary))" strokeDasharray="4 2" label={{ value: "현재", fontSize: 10, fill: "hsl(var(--primary))" }} />
+                <Line dataKey="real_price" stroke="#4ADE80" strokeWidth={2} dot={{ r: 3, fill: "#4ADE80", strokeWidth: 0 }} connectNulls={false} name="실거래" />
+                <Line dataKey="pred_price" stroke="#3B82F6" strokeWidth={2} strokeDasharray="5 3" dot={{ r: 4, fill: "#3B82F6", strokeWidth: 0 }} connectNulls name="예측" />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      )}
+    </td>
+  );
 }
 
 interface RegionAnalysisProps {
@@ -156,31 +261,36 @@ export function RegionAnalysis({ searchQuery }: RegionAnalysisProps) {
                         </thead>
                         <tbody>
                           {dongs.map((p) => (
-                            <tr key={p.dong} className="border-b border-border/40 hover:bg-muted/20 transition-colors">
-                              <td className="py-3 px-4 font-medium text-foreground">{p.dong}</td>
-                              <td className="py-3 px-4 text-right text-foreground">{formatPrice(p.current_price_10k)}</td>
-                              <td className="py-3 px-4 text-right">
-                                <div className="flex flex-col items-end gap-0.5">
-                                  <span className="text-foreground text-xs">{formatPrice(p.pred_1m_10k)}</span>
-                                  <ChangeCell pct={p.change_1m_pct} />
-                                </div>
-                              </td>
-                              <td className="py-3 px-4 text-right">
-                                <div className="flex flex-col items-end gap-0.5">
-                                  <span className="text-foreground text-xs">{formatPrice(p.pred_3m_10k)}</span>
-                                  <ChangeCell pct={p.change_3m_pct} />
-                                </div>
-                              </td>
-                              <td className="py-3 px-4 text-right">
-                                <div className="flex flex-col items-end gap-0.5">
-                                  <span className="text-foreground text-xs">{formatPrice(p.pred_6m_10k)}</span>
-                                  <ChangeCell pct={p.change_6m_pct} />
-                                </div>
-                              </td>
-                              <td className="py-3 px-4 text-center">
-                                <ConfidenceBadge score={p.confidence_score ?? 50} />
-                              </td>
-                            </tr>
+                            <React.Fragment key={p.dong}>
+                              <tr className="border-b border-border/40 hover:bg-muted/20 transition-colors">
+                                <td className="py-3 px-4 font-medium text-foreground">{p.dong}</td>
+                                <td className="py-3 px-4 text-right text-foreground">{formatPrice(p.current_price_10k)}</td>
+                                <td className="py-3 px-4 text-right">
+                                  <div className="flex flex-col items-end gap-0.5">
+                                    <span className="text-foreground text-xs">{formatPrice(p.pred_1m_10k)}</span>
+                                    <ChangeCell pct={p.change_1m_pct} />
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4 text-right">
+                                  <div className="flex flex-col items-end gap-0.5">
+                                    <span className="text-foreground text-xs">{formatPrice(p.pred_3m_10k)}</span>
+                                    <ChangeCell pct={p.change_3m_pct} />
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4 text-right">
+                                  <div className="flex flex-col items-end gap-0.5">
+                                    <span className="text-foreground text-xs">{formatPrice(p.pred_6m_10k)}</span>
+                                    <ChangeCell pct={p.change_6m_pct} />
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4 text-center">
+                                  <ConfidenceBadge score={p.confidence_score ?? 50} />
+                                </td>
+                              </tr>
+                              <tr className="border-b border-border/20 bg-muted/5">
+                                <DongChart prediction={p} />
+                              </tr>
+                            </React.Fragment>
                           ))}
                         </tbody>
                       </table>

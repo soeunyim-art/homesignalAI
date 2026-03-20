@@ -29,8 +29,8 @@ type Predictions = {
   base_ym: string;
   current: number;
   pred_1m: number;
-  pred_2m: number;
   pred_3m: number;
+  pred_6m: number;
 };
 
 type ChartPoint = {
@@ -91,7 +91,8 @@ export function GuDetailSheet({ gu, open, onClose }: GuDetailSheetProps) {
           const cur = toEok(predictions.current);
           const p1 = toEok(predictions.pred_1m);
           const p3 = toEok(predictions.pred_3m);
-          setChange(p3 > 0 ? ((p3 - cur) / cur) * 100 : null);
+          const p6 = toEok(predictions.pred_6m);
+          setChange(p6 > 0 ? ((p6 - cur) / cur) * 100 : null);
 
           // base_ym이 history에 없으면 현재가 포인트 추가
           const baseLabel = ymToLabel(predictions.base_ym);
@@ -106,19 +107,19 @@ export function GuDetailSheet({ gu, open, onClose }: GuDetailSheetProps) {
           predPoints.push({
             label: ymToLabel(addMonths(predictions.base_ym, 1)),
             actual: null,
-            predicted: toEok(predictions.pred_1m),
-            isPred: true,
-          });
-          predPoints.push({
-            label: ymToLabel(addMonths(predictions.base_ym, 2)),
-            actual: null,
-            predicted: Math.round((toEok(predictions.pred_1m) + toEok(predictions.pred_2m)) / 2 * 10) / 10,
+            predicted: p1,
             isPred: true,
           });
           predPoints.push({
             label: ymToLabel(addMonths(predictions.base_ym, 3)),
             actual: null,
-            predicted: toEok(predictions.pred_3m),
+            predicted: p3,
+            isPred: true,
+          });
+          predPoints.push({
+            label: ymToLabel(addMonths(predictions.base_ym, 6)),
+            actual: null,
+            predicted: p6,
             isPred: true,
           });
         }
@@ -148,7 +149,7 @@ export function GuDetailSheet({ gu, open, onClose }: GuDetailSheetProps) {
             {change !== null && (
               <Badge className={`ml-auto ${change >= 0 ? "bg-primary/20 text-primary" : "bg-destructive/20 text-destructive"} border-0`}>
                 {change >= 0 ? <TrendingUp className="h-3 w-3 mr-1" /> : <TrendingDown className="h-3 w-3 mr-1" />}
-                3개월 예측 {change > 0 ? "+" : ""}{change.toFixed(1)}%
+                6개월 예측 {change > 0 ? "+" : ""}{change.toFixed(1)}%
               </Badge>
             )}
           </div>
@@ -232,7 +233,7 @@ export function GuDetailSheet({ gu, open, onClose }: GuDetailSheetProps) {
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-6 h-0.5 bg-accent rounded" style={{ borderTop: "2px dashed #3B82F6", background: "none" }} />
-                <span className="text-xs text-muted-foreground">AI 예측 (1~3개월)</span>
+                <span className="text-xs text-muted-foreground">AI 예측 (1·3·6개월)</span>
               </div>
             </div>
 
