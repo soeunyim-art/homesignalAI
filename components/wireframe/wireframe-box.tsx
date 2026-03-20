@@ -9,13 +9,33 @@ interface WireframeBoxProps {
   dashed?: boolean;
 }
 
-export function WireframeBox({ label, children, className, dashed = false }: WireframeBoxProps) {
+export function WireframeBox({ 
+  label, 
+  children, 
+  className, 
+  dashed = false,
+  variant = "default" 
+}: { 
+  label?: string; 
+  children?: React.ReactNode; 
+  className?: string; 
+  dashed?: boolean;
+  variant?: "default" | "dashed" | "primary" | "muted";
+}) {
+  const isDashed = dashed || variant === "dashed";
+  const variantStyles = {
+    default: "border-border bg-card/50",
+    dashed: "border-dashed border-muted-foreground/40 bg-card/30",
+    primary: "border-primary/30 bg-primary/5",
+    muted: "border-muted-foreground/10 bg-muted/20",
+  };
+
   return (
     <div
       className={cn(
         "border-2 rounded-lg p-4 relative",
-        dashed ? "border-dashed border-muted-foreground/40" : "border-border",
-        "bg-card/50",
+        variantStyles[variant] || variantStyles.default,
+        isDashed && "border-dashed",
         className
       )}
     >
@@ -26,6 +46,24 @@ export function WireframeBox({ label, children, className, dashed = false }: Wir
       )}
       {children}
     </div>
+  );
+}
+
+export function WireframeDivider({ 
+  vertical = false, 
+  className 
+}: { 
+  vertical?: boolean; 
+  className?: string; 
+}) {
+  return (
+    <div 
+      className={cn(
+        "bg-muted-foreground/20 rounded-full",
+        vertical ? "w-[1px] h-full mx-2" : "h-[1px] w-full my-2",
+        className
+      )} 
+    />
   );
 }
 
@@ -58,18 +96,31 @@ export function WireframePlaceholder({
 export function WireframeText({ 
   size = "sm",
   lines = 1,
+  children,
   className 
 }: { 
   size?: "xs" | "sm" | "md" | "lg";
   lines?: number;
+  children?: React.ReactNode;
   className?: string;
 }) {
   const sizeStyles = {
+    xs: "text-[10px] leading-tight",
+    sm: "text-xs leading-relaxed",
+    md: "text-sm leading-relaxed",
+    lg: "text-base leading-relaxed",
+  };
+
+  const skeletonSizeStyles = {
     xs: "h-2",
     sm: "h-3",
     md: "h-4",
     lg: "h-6",
   };
+
+  if (children) {
+    return <div className={cn(sizeStyles[size], className)}>{children}</div>;
+  }
 
   return (
     <div className={cn("space-y-1", className)}>
@@ -78,7 +129,7 @@ export function WireframeText({
           key={i}
           className={cn(
             "bg-muted-foreground/20 rounded",
-            sizeStyles[size],
+            skeletonSizeStyles[size],
             i === lines - 1 && lines > 1 ? "w-3/4" : "w-full"
           )}
         />
