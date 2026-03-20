@@ -1,0 +1,50 @@
+name: Monthly Data Update
+
+on:
+  schedule:
+    # 매월 1일 오전 9시 (KST = UTC+9, 즉 UTC 00:00)
+    - cron: "0 0 1 * *"
+  workflow_dispatch:
+    # 수동 실행 버튼 (GitHub Actions 탭에서 직접 실행 가능)
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: 의존성 설치
+        run: pip install -r requirements.txt
+
+      - name: 실거래 데이터 수집 (국토부 + ECOS)
+        env:
+          PUBLIC_DATA_API_KEY: ${{ secrets.PUBLIC_DATA_API_KEY }}
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python collect_data.py update
+
+      - name: 예측 모델 실행 (Ridge 회귀 → Supabase 저장)
+        env:
+          PUBLIC_DATA_API_KEY: ${{ secrets.PUBLIC_DATA_API_KEY }}
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python predict_model.py
+
+      - name: 실행 완료 알림
+        if: success()
+        run: echo "✅ $(date '+%Y-%m') 데이터 업데이트 완료"
+
+      - name: 실패 시 로그 출력
+        if: failure()
+        run: echo "❌ 업데이트 실패 - GitHub Actions 로그를 확인하세요"

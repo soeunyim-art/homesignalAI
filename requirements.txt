@@ -1,32 +1,33 @@
-# HomeSignal AI - Vercel Deployment Requirements
-# Core dependencies only (ML libraries excluded due to 500MB bundle limit)
+# HomeSignal AI Dependencies
+# Core dependencies for FastAPI, Supabase, and AI
 
-# FastAPI and ASGI server
+# Backend (FastAPI)
 fastapi>=0.109.0
 uvicorn[standard]>=0.27.0
-
-# Data validation and settings
 pydantic>=2.0
 pydantic-settings>=2.0
 
-# Database and storage
-supabase>=2.0
-pyiceberg>=0.5.0  # Required for supabase storage3
+# Database
+supabase>=2.3.0,<2.10.0
 redis>=5.0
+psycopg>=3.1.0
 
-# HTTP client
-httpx>=0.26.0
-
-# AI APIs
+# AI & HTTP
 openai>=1.10.0
 anthropic>=0.18.0
+httpx[http2]>=0.26.0
+requests>=2.31.0
 
-# Configuration
+# Utils
+python-dotenv>=1.0.0
+python-dateutil>=2.8.2
 pyyaml>=6.0
-
-# Web scraping (for news crawler)
 beautifulsoup4>=4.12.0
 lxml>=5.0.0
 
-# Note: Prophet, LightGBM, pandas, numpy are excluded
-# These will be implemented in a separate ML service after initial deployment
+# ML & Data Analysis (Note: May exceed Vercel 500MB limit if all installed)
+pandas>=2.0.0
+numpy>=1.26.0
+scikit-learn>=1.4.0
+matplotlib>=3.8.0
+seaborn>=0.13.0
