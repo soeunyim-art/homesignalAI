@@ -1,3 +1,19 @@
 {
-  "installCommand": "npm install"
+  "version": 2,
+  "installCommand": "npm install",
+  "functions": {
+    "api/index.py": {
+      "runtime": "vercel-python@0.1.0"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/v1/:path*",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/health",
+      "destination": "/api/index.py"
+    }
+  ]
 }
