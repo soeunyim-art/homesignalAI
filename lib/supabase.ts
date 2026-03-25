@@ -11,9 +11,11 @@ export type Prediction = {
   base_ym: string;
   current_price_10k: number;
   pred_1m_10k: number;
+  pred_2m_10k: number;
   pred_3m_10k: number;
   pred_6m_10k: number;
   change_1m_pct: number;
+  change_2m_pct: number;
   change_3m_pct: number;
   change_6m_pct: number;
   confidence_score: number | null;

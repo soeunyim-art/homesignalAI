@@ -6,6 +6,12 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  // Turbopack configuration (empty to silence warnings)
+  turbopack: {},
+  // Webpack fallback for compatibility
+  webpack: (config) => {
+    return config;
+  },
 }
 
 export default nextConfig
