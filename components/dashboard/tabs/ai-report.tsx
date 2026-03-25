@@ -12,11 +12,9 @@ import {
   ExternalLink,
   RefreshCw,
   Building2,
-  Landmark,
 } from "lucide-react";
 import { useEffect, useState, useCallback } from "react";
 
-// ── 타입 ──────────────────────────────────────────────
 interface NewsItem {
   id: string;
   title: string;
@@ -36,15 +34,6 @@ interface PredictionData {
   pred_6m: number;
 }
 
-interface RateRow {
-  year: number;
-  month: number;
-  rate_base: number;
-  rate_cd: number;
-  rate_bond3y: number;
-}
-
-// ── 유틸 ──────────────────────────────────────────────
 function calcSentimentSummary(news: NewsItem[]) {
   const analyzed = news.filter((n) => n.sentiment_label);
   if (!analyzed.length) return { positive: 0, neutral: 0, negative: 0, overallScore: 50, trend: "보합" };
@@ -81,7 +70,6 @@ function fmtPct(val: number) {
   return `${sign}${val.toFixed(1)}%`;
 }
 
-// ── 컴포넌트 ──────────────────────────────────────────
 interface AIReportProps {
   searchQuery: string;
 }
@@ -91,7 +79,6 @@ const GU_LIST = ["동대문구", "성북구", "중랑구", "강북구", "도봉�
 export function AIReport({ searchQuery }: AIReportProps) {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [prediction, setPrediction] = useState<PredictionData | null>(null);
-  const [rates, setRates] = useState<RateRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchAll = useCallback(() => {
@@ -102,12 +89,10 @@ export function AIReport({ searchQuery }: AIReportProps) {
     Promise.all([
       fetch(`/api/news${q}`).then((r) => r.json()),
       fetch(`/api/trade-history?gu=${encodeURIComponent(gu)}`).then((r) => r.json()),
-      fetch("/api/interest-rate").then((r) => r.json()),
     ])
-      .then(([newsData, tradeData, rateData]) => {
+      .then(([newsData, tradeData]) => {
         setNews(Array.isArray(newsData) ? newsData : []);
         setPrediction(tradeData?.predictions ?? null);
-        setRates(Array.isArray(rateData) ? rateData : []);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -116,14 +101,6 @@ export function AIReport({ searchQuery }: AIReportProps) {
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   const sentiment = calcSentimentSummary(news);
-  const latestRate = rates[0] ?? null;
-  const prevRate = rates[1] ?? null;
-  const rateTrend = latestRate && prevRate
-    ? latestRate.rate_base > prevRate.rate_base ? "상승"
-      : latestRate.rate_base < prevRate.rate_base ? "하락"
-      : "동결"
-    : "–";
-
   const priceTrend = prediction
     ? fmtPct(((prediction.pred_1m - prediction.current) / prediction.current) * 100)
     : null;
@@ -137,7 +114,7 @@ export function AIReport({ searchQuery }: AIReportProps) {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold text-foreground">{searchQuery || gu} AI 리포트</h2>
-          <p className="text-sm text-muted-foreground">뉴스 감성 · 매매가 예측 · 금리 종합 분석</p>
+          <p className="text-sm text-muted-foreground">뉴스 감성 · 매매가 예측 종합 분석</p>
         </div>
         <Button variant="outline" size="sm" onClick={fetchAll} disabled={loading}>
           <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
@@ -152,7 +129,7 @@ export function AIReport({ searchQuery }: AIReportProps) {
           {loading ? (
             <p className="text-sm text-muted-foreground">로딩 중...</p>
           ) : (
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 gap-4">
               <div className="text-center">
                 <p className={`text-2xl font-bold ${sentiment.overallScore >= 60 ? "text-primary" : sentiment.overallScore <= 40 ? "text-destructive" : "text-muted-foreground"}`}>
                   {sentiment.overallScore}점
@@ -162,29 +139,20 @@ export function AIReport({ searchQuery }: AIReportProps) {
                   {sentiment.trend}
                 </Badge>
               </div>
-              <div className="text-center border-x border-border">
+              <div className="text-center border-l border-border">
                 <p className={`text-2xl font-bold ${priceTrend && !priceTrend.startsWith("-") ? "text-primary" : "text-destructive"}`}>
                   {priceTrend ?? "–"}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">1개월 예측 변화율</p>
                 <p className="text-xs text-muted-foreground">{gu} 평균</p>
               </div>
-              <div className="text-center">
-                <p className="text-2xl font-bold text-foreground">
-                  {latestRate ? `${latestRate.rate_base}%` : "–"}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">기준금리</p>
-                <Badge className={`mt-1 text-xs border-0 ${rateTrend === "상승" ? "bg-destructive/20 text-destructive" : rateTrend === "하락" ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"}`}>
-                  {rateTrend}
-                </Badge>
-              </div>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* 3-패널 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* 2-패널 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
         {/* 뉴스 감성 */}
         <Card className="bg-card border-border">
@@ -255,39 +223,6 @@ export function AIReport({ searchQuery }: AIReportProps) {
             )}
           </CardContent>
         </Card>
-
-        {/* 금리 동향 */}
-        <Card className="bg-card border-border">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Landmark className="h-4 w-4 text-primary" />
-              금리 동향
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? <p className="text-xs text-muted-foreground">로딩 중...</p> : !latestRate ? (
-              <p className="text-xs text-muted-foreground">데이터 없음</p>
-            ) : (
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">기준금리</span>
-                  <span className="font-semibold">{latestRate.rate_base}%</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">CD 91일</span>
-                  <span className="font-semibold">{latestRate.rate_cd}%</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">국고채 3년</span>
-                  <span className="font-semibold">{latestRate.rate_bond3y}%</span>
-                </div>
-                <p className="text-xs text-muted-foreground pt-1">
-                  {latestRate.year}년 {latestRate.month}월 기준 · 전월 대비 {rateTrend}
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
 
       {/* AI 종합 분석 */}
@@ -309,12 +244,6 @@ export function AIReport({ searchQuery }: AIReportProps) {
                       <span className={`font-medium ${prediction.pred_1m >= prediction.current ? "text-primary" : "text-destructive"}`}>
                         {fmt억(prediction.pred_1m)} ({fmtPct(((prediction.pred_1m - prediction.current) / prediction.current) * 100)})
                       </span>
-                    </>
-                  )}
-                  {latestRate && (
-                    <>
-                      , 현재 기준금리{" "}
-                      <span className="text-foreground font-medium">{latestRate.rate_base}% ({rateTrend})</span> 환경
                     </>
                   )}
                   {" "}을 종합하면{" "}
