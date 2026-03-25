@@ -13,15 +13,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 const regions = [
-  "서울특별시",
-  "경기도",
-  "인천광역시",
-  "부산광역시",
-  "대구광역시",
-  "대전광역시",
-  "광주광역시",
-  "울산광역시",
-  "세종특별자치시",
+  "동대문구",
+  "성북구",
+  "중랑구",
+  "강북구",
+  "도봉구",
 ];
 
 interface HeaderProps {
@@ -32,6 +28,7 @@ interface HeaderProps {
 
 export function Header({ onLogoClick, searchQuery, onSearch }: HeaderProps) {
   const [localQuery, setLocalQuery] = useState(searchQuery || "");
+  const selectedRegion = regions.find((r) => searchQuery?.includes(r)) ?? null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,14 +78,23 @@ export function Header({ onLogoClick, searchQuery, onSearch }: HeaderProps) {
           {/* Region Selector */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="min-w-[140px] justify-between bg-secondary border-border">
-                서울특별시
+              <Button variant="outline" className="min-w-[120px] justify-between bg-secondary border-border">
+                {selectedRegion ?? "구 선택"}
                 <ChevronDown className="h-4 w-4 ml-2 opacity-50" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-[160px]">
+            <DropdownMenuContent align="end" className="w-[140px]">
               {regions.map((region) => (
-                <DropdownMenuItem key={region}>{region}</DropdownMenuItem>
+                <DropdownMenuItem
+                  key={region}
+                  onClick={() => {
+                    setLocalQuery(region);
+                    onSearch?.(region);
+                  }}
+                  className={selectedRegion === region ? "text-primary font-medium" : ""}
+                >
+                  {region}
+                </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
